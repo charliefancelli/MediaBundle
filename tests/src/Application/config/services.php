@@ -3,6 +3,7 @@
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
+use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
 
 return static function (ContainerConfigurator $container): void {
     $container->parameters()->set('locale', 'en');
@@ -19,6 +20,11 @@ return static function (ContainerConfigurator $container): void {
 
     // nothing else injects the metadata storage yet, and private services without users are removed
     $services->alias('test.joli_media.metadata.storage', MetadataStorageInterface::class)->public();
+
+    // an affirmative voter wins over a denying one: the bridge voter has to be replaced
+    $services->set('test.joli_media_admin.security.voter', TestMediaVoter::class)
+        ->decorate('joli_media_admin.security.voter')
+    ;
 
     $services->load('JoliCode\MediaBundle\Tests\Application\Controller\\', '../src/Controller/')
         ->tag('controller.service_arguments')

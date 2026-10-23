@@ -4,8 +4,12 @@ namespace JoliCode\MediaBundle\Tests\Bridge\EasyAdmin\Controller;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -16,6 +20,10 @@ use Symfony\Component\HttpFoundation\Request;
 
 class MediaAdminControllerTest extends WebTestCase
 {
+    private const METADATA_PATH = 'sub/folder/circle-pattern.png';
+
+    private const LONG_PATH = 'a-folder-with-a-very-long-name-level-1/a-folder-with-a-very-long-name-level-2/a-folder-with-a-very-long-name-level-3/a-folder-with-a-very-long-name-level-4/a-folder-with-a-very-long-name-level-5/a-folder-with-a-very-long-name-level-6/a-folder-with-a-very-long-name-level-7/a-folder-with-a-very-long-name-level-8/a-folder-with-a-very-long-name-level-9/a-folder-with-a-very-long-name-level-10/test.txt';
+
     private KernelBrowser $client;
 
     private EntityRepository $pageRepository;
@@ -36,6 +44,127 @@ class MediaAdminControllerTest extends WebTestCase
             $application->setAutoExit(false);
             $application->run(new StringInput('doctrine:fixtures:load --purge-with-truncate --no-interaction --quiet'));
         }
+    }
+
+    protected function tearDown(): void
+    {
+        TestMediaVoter::$denyEditMetadata = false;
+
+        $storage = static::getContainer()->get('test.joli_media.metadata.storage');
+        \assert($storage instanceof MetadataStorageInterface);
+        foreach ([self::METADATA_PATH, self::LONG_PATH] as $path) {
+            $storage->delete('default', $path);
+        }
+
+        parent::tearDown();
+    }
+
+    public function testMetadataTabIsDisplayed(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tablist-tab-metadata');
+        $this->assertSelectorExists('#tab-metadata');
+        foreach (['alt', 'caption', 'copyright', 'tags'] as $field) {
+            $this->assertCount(1, $crawler->filter(\sprintf('#tab-metadata [name="metadata[%s]"]', $field)), $field);
+        }
+        $this->assertSelectorExists('#tab-metadata input[name="metadata[tags]"][list="joli-media-tags"]');
+        $this->assertSelectorExists('datalist#joli-media-tags');
+    }
+
+    public function testTheTagsDatalistSuggestsTheExistingTags(): void
+    {
+        $this->saveMetadata('Alt', 'Caption', 'Copyright', ['suggested-one', 'suggested-two']);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+
+        $options = $crawler->filter('datalist#joli-media-tags option')->each(static fn (Crawler $node): string => (string) $node->attr('value'));
+        $this->assertContains('suggested-one', $options);
+        $this->assertContains('suggested-two', $options);
+    }
+
+    public function testSavingMetadata(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => 'A circle pattern',
+            'metadata[caption]' => 'The caption',
+            'metadata[copyright]' => 'Me',
+            'metadata[tags]' => 'one, two ,One, three',
+        ]);
+        $this->client->submit($form);
+
+        $this->assertResponseRedirects('/admin/media/show/' . self::METADATA_PATH . '?_tab=3');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-success', 'The metadata of the media "circle-pattern.png" were successfully saved');
+
+        $metadata = $this->getMetadata();
+        $this->assertSame('A circle pattern', $metadata?->getAlt());
+        $this->assertSame('The caption', $metadata->getCaption());
+        $this->assertSame('Me', $metadata->getCopyright());
+        $this->assertSame(['one', 'two', 'three'], $metadata->getTags());
+    }
+
+    public function testEmptyingEveryFieldDeletesTheMetadata(): void
+    {
+        $this->saveMetadata('Alt', 'Caption', 'Copyright', ['one']);
+        $this->assertInstanceOf(MediaMetadata::class, $this->getMetadata());
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => '',
+            'metadata[caption]' => '',
+            'metadata[copyright]' => '',
+            'metadata[tags]' => '',
+        ]);
+        $this->client->submit($form);
+
+        $this->assertResponseRedirects('/admin/media/show/' . self::METADATA_PATH . '?_tab=3');
+        $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
+    }
+
+    public function testInvalidMetadataIsRefused(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => str_repeat('a', MediaMetadata::ALT_MAX_LENGTH + 1),
+        ]);
+        $this->client->submit($form);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorTextContains('.alert-danger', 'Failed to save the metadata of the media "circle-pattern.png"');
+        $this->assertSelectorTextContains('#tab-metadata #metadata_alt_error1', 'This value is too long');
+        $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
+    }
+
+    public function testEditingMetadataRequiresTheGrant(): void
+    {
+        TestMediaVoter::$denyEditMetadata = true;
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorNotExists('#tab-metadata');
+        $this->assertSelectorNotExists('form[name="metadata"]');
+        $this->assertCount(0, $crawler->filter('[name="metadata[alt]"]'));
+
+        $this->client->request(Request::METHOD_POST, '/admin/media/show/' . self::METADATA_PATH, [
+            'metadata' => ['alt' => 'Denied'],
+        ]);
+        $this->assertResponseStatusCodeSame(403);
+        $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
+    }
+
+    public function testMetadataTabIsHiddenForTooLongPaths(): void
+    {
+        $this->assertGreaterThan(MediaMetadata::PATH_MAX_LENGTH, mb_strlen(self::LONG_PATH));
+
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::LONG_PATH);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tablist-tab-metadata');
+        $this->assertSelectorTextContains('#tab-metadata', 'The path of this media is too long');
+        $this->assertSelectorNotExists('#tab-metadata form');
     }
 
     public function testDelete(): void
@@ -363,6 +492,31 @@ class MediaAdminControllerTest extends WebTestCase
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    private function getMetadata(): ?MediaMetadata
+    {
+        $provider = static::getContainer()->get('joli_media.metadata.provider');
+        \assert($provider instanceof MetadataProvider);
+        $provider->reset();
+
+        return $provider->get(self::METADATA_PATH, 'default');
+    }
+
+    /**
+     * @param list<string> $tags
+     */
+    private function saveMetadata(string $alt, string $caption, string $copyright, array $tags): void
+    {
+        $metadata = new MediaMetadata('default', self::METADATA_PATH);
+        $metadata->setAlt($alt);
+        $metadata->setCaption($caption);
+        $metadata->setCopyright($copyright);
+        $metadata->setTags($tags);
+
+        $storage = static::getContainer()->get('test.joli_media.metadata.storage');
+        \assert($storage instanceof MetadataStorageInterface);
+        $storage->save($metadata);
     }
 
     private function findInGalleryFromName(Crawler $crawler, string $name): Crawler

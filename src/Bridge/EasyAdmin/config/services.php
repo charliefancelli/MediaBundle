@@ -79,6 +79,10 @@ return static function (ContainerConfigurator $container): void {
             '$mediaPaginator' => service('joli_media_easy_admin.paginator'),
             '$assetRegistrar' => service('joli_media_easy_admin.asset.registrar'),
             '$authorizationChecker' => service('security.authorization_checker')->ignoreOnInvalid(),
+            '$metadataProvider' => service('joli_media.metadata.provider')->nullOnInvalid(),
+            '$metadataManager' => service('joli_media.metadata.manager')->nullOnInvalid(),
+            '$metadataStorage' => service('joli_media.metadata.storage')->nullOnInvalid(),
+            '$metadataFields' => param('joli_media.metadata.fields'),
         ])
         ->call('setContainer', [service('service_container')])
         ->tag('controller.service_arguments')

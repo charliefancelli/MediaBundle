@@ -28,6 +28,7 @@ class MediaVoter extends Voter
             AdminAction::MOVE => $this->canMove($user, $subject->libraryName, $subject->path, $subject->to),
             AdminAction::RENAME_DIRECTORY => $this->canRenameDirectory($user, $subject->libraryName, $subject->path, $subject->to),
             AdminAction::REGENERATE_VARIATION => $this->canRegenerateVariation($user, $subject->libraryName, $subject->path, $subject->variation),
+            AdminAction::EDIT_METADATA => $this->canEditMetadata($user, $subject->libraryName, $subject->path),
             default => false,
         };
     }
@@ -73,6 +74,11 @@ class MediaVoter extends Voter
     }
 
     protected function canRegenerateVariation(?UserInterface $user, string $libraryName, string $path, string $variationName): bool
+    {
+        return true;
+    }
+
+    protected function canEditMetadata(?UserInterface $user, string $libraryName, string $path): bool
     {
         return true;
     }

@@ -11,6 +11,7 @@ use JoliCode\MediaBundle\Bridge\EasyAdmin\Router\MediaAdminRouter;
 use JoliCode\MediaBundle\Bridge\Form\Type\CreateDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\DeleteDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\DeleteType;
+use JoliCode\MediaBundle\Bridge\Form\Type\MetadataType;
 use JoliCode\MediaBundle\Bridge\Form\Type\MoveType;
 use JoliCode\MediaBundle\Bridge\Form\Type\RenameDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\RenameType;
@@ -22,6 +23,10 @@ use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Exception\UnprocessableMediaException;
 use JoliCode\MediaBundle\Library\Library;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Resolver\Resolver;
@@ -67,6 +72,11 @@ class MediaAdminController extends AbstractController
         private readonly MediaPaginator $mediaPaginator,
         private readonly AssetRegistrar $assetRegistrar,
         private readonly ?AuthorizationCheckerInterface $authorizationChecker = null,
+        private readonly ?MetadataProvider $metadataProvider = null,
+        private readonly ?MetadataManager $metadataManager = null,
+        private readonly ?MetadataStorageInterface $metadataStorage = null,
+        /** @var list<string> */
+        private readonly array $metadataFields = [],
     ) {
     }
 
@@ -561,6 +571,71 @@ class MediaAdminController extends AbstractController
             );
         }
 
+        $metadataForm = null;
+        $metadataPathTooLong = false;
+        $metadataTags = [];
+        $metadataEnabled = $this->metadataProvider instanceof MetadataProvider
+            && $this->metadataManager instanceof MetadataManager
+            && $this->isActionGranted(AdminAction::EDIT_METADATA, new AdminAction(
+                libraryName: $this->getLibrary()->getName(),
+                path: Resolver::normalizePath($key),
+            ));
+
+        if ($this->metadataProvider instanceof MetadataProvider && $this->metadataManager instanceof MetadataManager) {
+            if (mb_strlen($key) > MediaMetadata::PATH_MAX_LENGTH) {
+                $metadataPathTooLong = true;
+            } else {
+                $metadataForm = $this->createMetadataForm($key);
+                $metadataForm->handleRequest($request);
+
+                if ($metadataForm->isSubmitted()) {
+                    $displayedTab = 3;
+                    $this->denyAccessUnlessGranted(AdminAction::EDIT_METADATA, new AdminAction(
+                        libraryName: $this->getLibrary()->getName(),
+                        path: Resolver::normalizePath($key),
+                    ));
+
+                    if ($metadataForm->isValid()) {
+                        try {
+                            $this->metadataManager->save($metadataForm->getData());
+                            $this->addFlash(
+                                'success',
+                                $this->translator->trans(
+                                    'media.metadata.saved_success',
+                                    ['%media%' => basename($key)],
+                                    'JoliMediaEasyAdminBundle',
+                                )
+                            );
+
+                            return $this->redirect($this->mediaAdminRouter->generateUrl(
+                                'show',
+                                ['key' => $key, '_tab' => 3],
+                            ));
+                        } catch (\Exception $e) {
+                            $error = $e->getMessage();
+                        }
+                    } else {
+                        $error = $metadataForm->getErrors(true, false);
+                    }
+
+                    // the form may have changed the memoized metadata: do not let it leak
+                    $this->metadataProvider->forget($this->getLibrary()->getName(), $key);
+                    $this->addFlash(
+                        'danger',
+                        $this->translator->trans(
+                            'media.metadata.saved_failure',
+                            ['%media%' => basename($key), '%error%' => $error],
+                            'JoliMediaEasyAdminBundle',
+                        )
+                    );
+                }
+
+                if ($this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true)) {
+                    $metadataTags = $this->metadataStorage->listTags($this->getLibrary()->getName(), 100);
+                }
+            }
+        }
+
         if ($this->resolver->isMediaProcessable($media)) {
             $variations = $this->getLibrary()->getVariationContainer()->list();
 
@@ -585,6 +660,10 @@ class MediaAdminController extends AbstractController
             'displayed_tab' => $displayedTab,
             'file' => $key,
             'media' => $media,
+            'metadata_enabled' => $metadataEnabled,
+            'metadata_form' => $metadataEnabled ? $metadataForm?->createView() : null,
+            'metadata_path_too_long' => $metadataPathTooLong,
+            'metadata_tags' => $metadataTags,
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
         ]));
@@ -689,6 +768,11 @@ class MediaAdminController extends AbstractController
 
             throw $e;
         }
+    }
+
+    private function isActionGranted(string $attribute, mixed $subject): bool
+    {
+        return $this->authorizationChecker?->isGranted($attribute, $subject) ?? true;
     }
 
     /**
@@ -849,6 +933,19 @@ class MediaAdminController extends AbstractController
         }
 
         return $form;
+    }
+
+    private function createMetadataForm(string $path): FormInterface
+    {
+        $libraryName = $this->getLibrary()->getName();
+        $metadata = $this->metadataProvider?->get($path, $libraryName) ?? new MediaMetadata($libraryName, $path);
+
+        return $this->formFactory->create(MetadataType::class, $metadata, [
+            'action' => $this->mediaAdminRouter->generateUrl('show', ['key' => $path]),
+            'method' => Request::METHOD_POST,
+            'translation_domain' => $this->config->getTranslationDomain(),
+            'fields' => $this->metadataFields,
+        ]);
     }
 
     private function createMoveFileForm(?string $path = null): FormInterface
