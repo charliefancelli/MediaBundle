@@ -60,6 +60,7 @@ use JoliCode\MediaBundle\Twig\Components\Source;
 use JoliCode\MediaBundle\Twig\JoliMediaExtension;
 use JoliCode\MediaBundle\Usage\EventListener\UsageDeleteGuardListener;
 use JoliCode\MediaBundle\Usage\MediaUsageFinder;
+use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
 use JoliCode\MediaBundle\Validator\MediaValidator;
 use JoliCode\MediaBundle\Variation\Variation;
 use JoliCode\MediaBundle\Variation\VariationContainer;
@@ -236,7 +237,8 @@ return static function (ContainerConfigurator $container): void {
             service(CacheInterface::class),
             service('joli_media.library_container'),
             tagged_iterator('joli_media.media_usage_provider'),
-            null,
+            // aliased by the admin bridges able to link a usage to its edit page
+            service(MediaUsageUrlGeneratorInterface::class)->nullOnInvalid(),
         ])
         ->alias(MediaUsageFinder::class, 'joli_media.usage_finder')
         // not removed by DoctrinePass: it works without DoctrineBundle.

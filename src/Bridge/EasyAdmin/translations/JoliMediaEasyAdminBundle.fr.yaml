@@ -50,6 +50,7 @@ media:
         forbidden: 'Le média "%media%" est stocké dans un dossier réservé et ne peut pas être modifié.'
         in_use: 'Le media "%media%" est utilisé dans le champ "%field%" de l''entité "%entity%". Il ne peut pas être supprimé.'
         in_use_by: 'Le media "%media%" est utilisé par "%entity%". Il ne peut pas être supprimé.'
+        in_use_with_usages: 'Le média "%media%" est utilisé à %count% endroit(s) : %usages%. Il ne peut pas être supprimé.'
     inaccessible:
         explanation: 'Le média "%media%" n''est pas accessible. Il a peut-être été supprimé ou déplacé.'
         label: 'Média inaccessible'
@@ -106,6 +107,13 @@ preview:
     label: 'Aperçu'
     unavailable: 'Aperçu non disponible.'
 root: 'Racine'
+usage:
+    blocks_deletion: 'Bloque la suppression'
+    edit: 'Modifier'
+    field: 'Champ'
+    label: 'Utilisé dans'
+    label_plural: 'Utilisations'
+    none: 'Ce média n''est utilisé nulle part.'
 variation:
     label: 'Variation'
     label_plural: 'Variations'

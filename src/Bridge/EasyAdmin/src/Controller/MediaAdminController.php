@@ -26,6 +26,8 @@ use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Resolver\Resolver;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
+use JoliCode\MediaBundle\Usage\MediaUsage;
+use JoliCode\MediaBundle\Usage\MediaUsageFinder;
 use League\Flysystem\PathTraversalDetected;
 use League\Flysystem\UnableToListContents;
 use League\Flysystem\UnableToWriteFile;
@@ -55,6 +57,11 @@ class MediaAdminController extends AbstractController
      */
     public const PATH_PREFIX_PLACEHOLDER = '__joli_media_path_prefix__';
 
+    /**
+     * The number of the "Usages" tab of the media page (the "Metadata" tab being the third one).
+     */
+    public const USAGES_TAB = 4;
+
     public function __construct(
         private readonly LibraryContainer $libraries,
         private readonly Config $config,
@@ -67,6 +74,7 @@ class MediaAdminController extends AbstractController
         private readonly MediaPaginator $mediaPaginator,
         private readonly AssetRegistrar $assetRegistrar,
         private readonly ?AuthorizationCheckerInterface $authorizationChecker = null,
+        private readonly ?MediaUsageFinder $usageFinder = null,
     ) {
     }
 
@@ -181,22 +189,11 @@ class MediaAdminController extends AbstractController
                     ['key' => ''],
                 ));
             } catch (MediaInUseException $e) {
-                $this->addFlash(
-                    'danger',
-                    $this->translator->trans(
-                        '' === $e->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
-                        [
-                            '%media%' => $e->getPath(),
-                            '%field%' => $e->getPropertyName(),
-                            '%entity%' => $e->getEntityName(),
-                        ],
-                        'JoliMediaEasyAdminBundle'
-                    )
-                );
+                $this->addFlash('danger', $this->createInUseMessage($e));
 
                 return $this->redirect($this->mediaAdminRouter->generateUrl(
                     'show',
-                    ['key' => $key],
+                    ['key' => $key] + (null !== $this->usageFinder ? ['_tab' => self::USAGES_TAB] : []),
                 ));
             }
 
@@ -251,18 +248,7 @@ class MediaAdminController extends AbstractController
                     ['key' => ''],
                 ));
             } catch (MediaInUseException $e) {
-                $this->addFlash(
-                    'danger',
-                    $this->translator->trans(
-                        '' === $e->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
-                        [
-                            '%media%' => $e->getPath(),
-                            '%field%' => $e->getPropertyName(),
-                            '%entity%' => $e->getEntityName(),
-                        ],
-                        'JoliMediaEasyAdminBundle'
-                    )
-                );
+                $this->addFlash('danger', $this->createInUseMessage($e));
 
                 return $this->redirect($this->mediaAdminRouter->generateUrl(
                     'explore',
@@ -587,6 +573,7 @@ class MediaAdminController extends AbstractController
             'media' => $media,
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
+            'usages' => $this->usageFinder?->find($key, $this->getLibrary()->getName()),
         ]));
     }
 
@@ -956,6 +943,41 @@ class MediaAdminController extends AbstractController
      * Returns the key of the directory containing the given key, the root directory
      * being identified by an empty key rather than by the "." returned by dirname().
      */
+    /**
+     * Names where the blocking media is used when the usage finder is available (and knows
+     * about at least one usage), else describes the first usage reported by the exception.
+     */
+    private function createInUseMessage(MediaInUseException $exception): string
+    {
+        $usages = $this->usageFinder?->find($exception->getPath(), $this->getLibrary()->getName()) ?? [];
+
+        if ([] !== $usages) {
+            return $this->translator->trans(
+                'media.error.in_use_with_usages',
+                [
+                    '%media%' => htmlspecialchars($exception->getPath()),
+                    '%count%' => \count($usages),
+                    // EasyAdmin renders the flash messages as raw HTML
+                    '%usages%' => implode(', ', array_map(
+                        static fn (MediaUsage $usage): string => htmlspecialchars($usage->label),
+                        $usages,
+                    )),
+                ],
+                'JoliMediaEasyAdminBundle'
+            );
+        }
+
+        return $this->translator->trans(
+            '' === $exception->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
+            [
+                '%media%' => $exception->getPath(),
+                '%field%' => $exception->getPropertyName(),
+                '%entity%' => $exception->getEntityName(),
+            ],
+            'JoliMediaEasyAdminBundle'
+        );
+    }
+
     private function getParentKey(string $key): string
     {
         $parentKey = \dirname($key);

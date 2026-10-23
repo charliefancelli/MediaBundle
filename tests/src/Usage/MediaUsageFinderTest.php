@@ -73,7 +73,9 @@ class MediaUsageFinderTest extends WebTestCase
             $this->assertSame(Page::class, $usage->entityClass);
             $this->assertSame('mediaRestrict', $usage->field);
             $this->assertTrue($usage->blocksDeletion);
-            $this->assertNull($usage->editUrl);
+            // the EasyAdmin bridge of the test application links the usages to their edit page
+            $this->assertNotNull($usage->editUrl);
+            $this->assertStringContainsString((string) $usage->identifier, $usage->editUrl);
         }
     }
 
@@ -100,8 +102,8 @@ class MediaUsageFinderTest extends WebTestCase
         $usage = new MediaUsage('A CMS block', field: 'content', identifier: 12, blocksDeletion: true);
         StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', [$usage]);
 
-        $this->assertSame([$usage], $this->finder->find('not_used/default.pdf', 'default'));
-        $this->assertSame([$usage], $this->finder->find('not_used/default.pdf'), 'The default library is used when none is given.');
+        $this->assertEquals([$usage], $this->finder->find('not_used/default.pdf', 'default'));
+        $this->assertEquals([$usage], $this->finder->find('not_used/default.pdf'), 'The default library is used when none is given.');
         $this->assertSame([], $this->finder->find('not_used/default.pdf', 'auto_generate'));
     }
 
