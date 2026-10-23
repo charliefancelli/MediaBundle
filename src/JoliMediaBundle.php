@@ -80,11 +80,15 @@ class JoliMediaBundle extends AbstractBundle
 
         if (class_exists(DoctrineOrmMappingsPass::class)) {
             // a null "joli_media.metadata.entity_manager" is skipped: the default entity manager is used
+            // the last two arguments ($aliasMap and $reportFieldsWhereDeclared) are positional: DoctrineBundle 3
+            // has neither of them (with ORM 3, the fields are always reported where they are declared)
             $container->addCompilerPass(DoctrineOrmMappingsPass::createAttributeMappingDriver(
                 ['JoliCode\MediaBundle\Metadata\Model'],
                 [__DIR__ . '/Metadata/Model'],
                 ['joli_media.metadata.entity_manager', 'doctrine.default_entity_manager'],
                 'joli_media.metadata.doctrine_mapping',
+                [],
+                true,
             ));
         }
     }
