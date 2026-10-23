@@ -278,6 +278,20 @@ When most of your text editors share the same variation, define it once for the 
 
 The variation configured on a field always takes precedence over this default one. The variation must be defined in the default library, otherwise the media picker returns a "400 Bad Request" error. Media for which the variation does not apply - because of the variation `voters <../variations/variation-voters.html>`_, or because they are not images - are inserted as their original file.
 
+Editing the media metadata
+--------------------------
+
+When the `metadata feature <../misc-features/metadata.rst>`_ is enabled, the bridge lets you edit the metadata of the media:
+
+- the page of a media has a "Metadata" tab, with a form for the configured ``fields``. The tags are entered separated by commas, and the tags already used in the library are suggested. The tab is available to the users granted the ``joli_media_edit_metadata`` attribute (``AdminAction::EDIT_METADATA``), which the default voter grants to everyone - see `Restricting access to the Media library controller`_;
+- the tags of a media are displayed on its page, as links to the media library filtered by this tag;
+- the images without alternative text are marked with a warning icon in the media library (grid and list views) and in the media browser. It is only displayed when ``alt`` is one of the configured ``fields``;
+- the media library and the media browser can be filtered by tag, by adding a ``tag`` parameter to their URL (``/admin/media/explore?tag=sunset``). The filter is only available when ``tags`` is one of the configured ``fields``, and it is ignored otherwise. It is combined with the search and keeps the current folder as its root: the folders are not listed while it is active.
+
+The metadata of a media whose path is longer than 255 characters cannot be stored: the tab displays a message instead of the form.
+
+Without the metadata feature, none of this is displayed.
+
 Restricting access to the Media library controller
 --------------------------------------------------
 
@@ -323,3 +337,4 @@ The ``JoliCode\MediaBundle\Bridge\Security\Voter\MediaVoter`` class provides sev
 - ``canMove``: Determine if the user can move a media item from one path to another
 - ``canRenameDirectory``: Determine if the user can rename a specific directory
 - ``canRegenerateVariation``: Determine if the user can regenerate a specific variation of a media item
+- ``canEditMetadata``: Determine if the user can edit the metadata of a media item (only used when the `metadata feature <../misc-features/metadata.rst>`_ is enabled)

@@ -24,6 +24,8 @@ Folder Events are triggered when folders are created or deleted:
 - ``PreMoveFolderEvent``: Triggered before a folder is moved or renamed. Example usage: Prevent the move under certain conditions.
 - ``PostMoveFolderEvent``: Triggered after a folder is moved or renamed. Example usage: Update the references to the medias it holds. If a listener throws an exception, the move is rolled back.
 
+The ``PostSaveMetadataEvent`` (``MediaEvents::POST_SAVE_METADATA``) is triggered after the metadata of a media are saved with ``MetadataManager::save()``, when the metadata feature is enabled. It gives the saved ``metadata``, and whether its row was ``deleted`` (because every field was empty). Example usage: Purge an HTTP cache. It is not triggered when the metadata follow a move or a deletion of their media: the ``PostMoveMediaEvent`` and ``PostDeleteMediaEvent`` events (and their folder counterparts) are triggered instead - see the `metadata documentation <metadata.rst>`_.
+
 The ``PreResolveMediaEvent`` is triggered before a media object is resolved. This event allows you to modify the media path or perform additional checks before the media is accessed.
 
 .. note::

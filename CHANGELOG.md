@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- feature - Optional media metadata: an alternative text, a caption, a copyright and some tags can be stored for each media, in the database. Disabled by default, it is enabled with the `joli_media.metadata` configuration and requires `doctrine/orm` with the default `doctrine` storage (or your own `MetadataStorageInterface` service). The metadata are read with `Media::getMetadata()`, the `MetadataProvider` service or the new `joli_media_alt`, `joli_media_caption`, `joli_media_copyright`, `joli_media_tags` and `joli_media_metadata` Twig filters, written with the `MetadataManager` service (which dispatches a new `POST_SAVE_METADATA` event), and they follow the moves and deletions of their media - see the [metadata documentation](doc/misc-features/metadata.rst)
+- feature - The `joli:Img` and `joli:Picture` components use the stored alternative text of the media when no `alt` attribute is given. An explicit `alt`, even an empty one for a decorative image, always wins - see the [Twig components documentation](doc/misc-features/twig-components.rst)
+- feature - The EasyAdmin bridge has a "Metadata" tab on the page of a media (granted by the new `EDIT_METADATA` admin action), marks the images without alternative text in the media library, and filters the media library and the media browser by tag - see the [EasyAdmin bridge documentation](doc/bridges/easy-admin.rst)
+
 ## [0.10.0] - 2026-10-05
 
 - bc break - The bundle no longer forces a `public` visibility when writing media and variation files: the visibility configured on the Flysystem storage now applies. On Amazon S3, the forced visibility made every file public through a `public-read` ACL, and failed on the buckets where ACLs are disabled. Declare `visibility: public` on your Flysystem storage if you relied on the forced visibility

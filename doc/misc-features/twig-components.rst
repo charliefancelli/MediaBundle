@@ -29,6 +29,8 @@ This outputs an ``img`` tag with the correct ``src`` attribute and default setti
         decoding="async"
     >
 
+When the `metadata feature <metadata.rst>`_ is enabled, the ``alt`` attribute can be omitted: the component then uses the alternative text stored for the media, if there is one. An ``alt`` attribute you provide always wins, even an empty one: ``alt=""`` marks the image as decorative, and is output as is. The ``joli:Picture`` component does the same for its ``img`` tag.
+
 If the image is stored in the default library, you can omit the ``library`` attribute, the component will use the default library. If, however, the image is stored in a different library, you can specify the library name:
 
 .. code-block:: html+twig
