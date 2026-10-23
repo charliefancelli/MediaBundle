@@ -20,8 +20,8 @@ $autoload = require $file;
 
 $kernel = new Kernel();
 
-// delete the existing cache directory to avoid issues
-(new Filesystem())->remove($kernel->getCacheDir());
+// delete the existing cache directories to avoid issues
+(new Filesystem())->remove([$kernel->getCacheDir(), (new Kernel('no_metadata'))->getCacheDir()]);
 
 $application = new Application($kernel);
 $application->setAutoExit(false);

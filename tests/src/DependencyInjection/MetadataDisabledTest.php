@@ -18,7 +18,8 @@ class MetadataDisabledTest extends TestCase
     {
         $container = $this->createContainer(['enabled' => false]);
 
-        // DoctrinePass must be a no-op when the metadata are off, even without DoctrineBundle
+        // DoctrinePass must be inert for the metadata when they are off, even without DoctrineBundle
+        // (without it, the pass still removes the four Doctrine listeners, as it always did)
         // (a full compilation is not possible here: the services depend on the application)
         (new DoctrinePass())->process($container);
 
