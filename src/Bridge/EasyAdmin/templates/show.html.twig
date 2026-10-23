@@ -288,6 +288,16 @@
                         {{ include('@JoliMediaEasyAdmin/_preview.html.twig', { variation: 'joli_media_easy_admin_large', className: 'media-preview' }) }}
                     </dd>
                 </div>
+                {% if media_tags is defined and media_tags|length > 0 %}
+                    <div class="data-row">
+                        <dt>{{ 'media.metadata.tags'|trans }}</dt>
+                        <dd>
+                            {% for media_tag in media_tags %}
+                                <a href="{{ joli_media_admin_url('explore', { }, { tag: media_tag }) }}" class="badge badge-secondary" data-joli-media-tag>{{ media_tag }}</a>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                {% endif %}
                 <div class="data-row">
                     <dt>{{ 'media.url.label_long'|trans }}</dt>
                     <dd class="d-flex jm-box">

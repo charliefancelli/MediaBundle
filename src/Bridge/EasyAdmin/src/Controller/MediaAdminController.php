@@ -671,6 +671,7 @@ class MediaAdminController extends AbstractController
             'metadata_form' => $metadataEnabled ? $metadataForm?->createView() : null,
             'metadata_path_too_long' => $metadataPathTooLong,
             'metadata_tags' => $metadataTags,
+            'media_tags' => $this->metadataProvider?->get($key, $this->getLibrary()->getName())?->getTags() ?? [],
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
         ]));
@@ -803,6 +804,12 @@ class MediaAdminController extends AbstractController
             path: $currentKey,
         ));
 
+        // the tag filter needs the metadata storage, and is ignored without it
+        $tag = $this->metadataStorage instanceof MetadataStorageInterface && 'chooseDirectory' !== $action
+            ? trim($request->query->getString('tag', ''))
+            : '';
+        $hasTag = '' !== $tag;
+
         // the search is only supported by the explore view and the media picker modal
         $searchValue = 'chooseDirectory' !== $action
             ? $request->query->getString('query', '')
@@ -832,7 +839,10 @@ class MediaAdminController extends AbstractController
                 $dirFilter = static fn (string $directory): bool => str_contains(strtolower($directory), strtolower($searchValue));
             }
 
-            $directories = $this->getOriginalStorage()->listDirectories($currentKey, recursive: $hasSearch, filter: $dirFilter);
+            // a tag only applies to the media, the directories are not listed when filtering by tag
+            $directories = $hasTag
+                ? []
+                : $this->getOriginalStorage()->listDirectories($currentKey, recursive: $hasSearch, filter: $dirFilter);
             natcasesort($directories);
         } catch (ForbiddenPathException|PathTraversalDetected|UnableToListContents) {
             $this->addFlash(
@@ -858,7 +868,16 @@ class MediaAdminController extends AbstractController
 
         if ($hasSearch) {
             $mediaFilter = static fn (Media $media): bool => str_contains(strtolower($media->getPath()), strtolower($searchValue));
+        }
 
+        if ($hasTag && $this->metadataStorage instanceof MetadataStorageInterface) {
+            $taggedPaths = array_flip($this->metadataStorage->findPathsByTag($this->getLibrary()->getName(), $tag));
+            $searchFilter = $mediaFilter;
+            $mediaFilter = static fn (Media $media): bool => isset($taggedPaths[$media->getPath()])
+                && (null === $searchFilter || $searchFilter($media));
+        }
+
+        if ($hasSearch || $hasTag) {
             // recursive listings are not sorted by default and depend on the storage
             // adapter's traversal order, which would make pagination unstable
             $mediaSort = static fn (Media $a, Media $b): int => strtolower($a->getPath()) <=> strtolower($b->getPath());
@@ -867,7 +886,7 @@ class MediaAdminController extends AbstractController
         try {
             $paginatedMedias = $this->getOriginalStorage()->listMediasPaginated(
                 $currentKey,
-                recursive: $hasSearch,
+                recursive: $hasSearch || $hasTag,
                 page: $request->query->getInt('page', 1),
                 perPage: $this->config->getPaginationSize(),
                 filter: $mediaFilter,
@@ -877,9 +896,18 @@ class MediaAdminController extends AbstractController
             throw new BadRequestException('The requested page number is out of range.');
         }
 
-        $paginator = $this->mediaPaginator->paginateMedias($paginatedMedias, $action, $currentKey, $searchValue);
+        $paginator = $this->mediaPaginator->paginateMedias($paginatedMedias, $action, $currentKey, $searchValue, $tag);
 
-        return new Response($this->twig->render('@JoliMediaEasyAdmin/list.html.twig', [
+        $metadataVariables = [];
+        if ($this->metadataProvider instanceof MetadataProvider) {
+            // one query for the whole page
+            $metadataVariables = [
+                'metadata' => $this->metadataProvider->getMany($paginator->getResults(), $this->getLibrary()->getName()),
+                'metadata_alt_enabled' => \in_array('alt', $this->metadataFields, true),
+            ];
+        }
+
+        return new Response($this->twig->render('@JoliMediaEasyAdmin/list.html.twig', $metadataVariables + [
             'action' => $action,
             'base_template' => \sprintf('@JoliMediaEasyAdmin/%s.html.twig', $template),
             'breadcrumb' => $this->generateBreadcrumb($currentKey, $action),
@@ -895,6 +923,7 @@ class MediaAdminController extends AbstractController
             'parent_key' => \dirname($currentKey),
             'rename_directory_form' => $this->createRenameDirectoryForm($key)->createView(),
             'search' => $searchValue,
+            'tag' => $tag,
         ]));
     }
 

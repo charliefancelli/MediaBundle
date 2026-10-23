@@ -16,6 +16,7 @@ use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Resolver\Resolver;
+use JoliCode\MediaBundle\Tests\Application\Doctrine\QueryCounterMiddleware;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
@@ -35,6 +36,8 @@ use Twig\Environment;
 class MediaAdminControllerTest extends WebTestCase
 {
     private const METADATA_PATH = 'sub/folder/circle-pattern.png';
+
+    private const OTHER_PATH = 'not_used/default.pdf';
 
     private const LONG_PATH = 'a-folder-with-a-very-long-name-level-1/a-folder-with-a-very-long-name-level-2/a-folder-with-a-very-long-name-level-3/a-folder-with-a-very-long-name-level-4/a-folder-with-a-very-long-name-level-5/a-folder-with-a-very-long-name-level-6/a-folder-with-a-very-long-name-level-7/a-folder-with-a-very-long-name-level-8/a-folder-with-a-very-long-name-level-9/a-folder-with-a-very-long-name-level-10/test.txt';
 
@@ -66,7 +69,7 @@ class MediaAdminControllerTest extends WebTestCase
 
         $storage = static::getContainer()->get('test.joli_media.metadata.storage');
         \assert($storage instanceof MetadataStorageInterface);
-        foreach ([self::METADATA_PATH, self::LONG_PATH] as $path) {
+        foreach ([self::METADATA_PATH, self::OTHER_PATH, self::LONG_PATH] as $path) {
             $storage->delete('default', $path);
         }
 
@@ -251,6 +254,110 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertSelectorExists('#tablist-tab-metadata');
         $this->assertSelectorTextContains('#tab-metadata', 'The path of this media is too long');
         $this->assertSelectorNotExists('#tab-metadata form');
+    }
+
+    public function testImagesWithoutAltAreMarked(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
+        $this->assertResponseIsSuccessful();
+        $image = $this->findInGalleryFromName($crawler, 'circle-pattern.png');
+        $this->assertCount(1, $image->filter('[data-joli-media-missing-alt]'));
+        $this->assertNotSame('', (string) $image->filter('[data-joli-media-missing-alt]')->attr('title'));
+
+        // a stored alt removes the marker
+        $this->saveMetadata('A circle', '', '', []);
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
+        $this->assertCount(0, $this->findInGalleryFromName($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]'));
+
+        // the media picker marks them too, in both view modes
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file/sub/folder');
+        $this->assertCount(0, $this->findInGalleryFromName($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]'));
+
+        // a document is never marked
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore');
+        $pdf = $this->findInGalleryFromName($crawler, 'default.pdf');
+        $this->assertCount(1, $pdf);
+        $this->assertCount(0, $pdf->filter('[data-joli-media-missing-alt]'));
+    }
+
+    public function testTheMissingAltMarkerNeedsTheAltField(): void
+    {
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
+        $this->assertSelectorExists('[data-joli-media-missing-alt]');
+
+        $twig = $this->service('twig', Environment::class);
+        $html = $twig->render('@JoliMediaEasyAdmin/_missing_alt.html.twig', [
+            'media' => $this->service('joli_media.library_container', LibraryContainer::class)->getDefault()->getOriginalStorage()->get(self::METADATA_PATH),
+            'metadata' => [],
+            'metadata_alt_enabled' => false,
+        ]);
+        $this->assertSame('', trim($html));
+    }
+
+    public function testTheListLoadsMetadataInOneQuery(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['one']);
+
+        QueryCounterMiddleware::reset();
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
+        $this->assertResponseIsSuccessful();
+
+        $queries = array_filter(
+            QueryCounterMiddleware::getQueries(),
+            static fn (string $sql): bool => str_contains($sql, 'joli_media_metadata') && str_starts_with(ltrim($sql), 'SELECT'),
+        );
+        $this->assertCount(1, $queries, implode("\n", $queries));
+    }
+
+    public function testFilterByTag(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport']);
+        $other = new MediaMetadata('default', self::OTHER_PATH);
+        $other->setTags(['sport', 'other']);
+        $storage = $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class);
+        $storage->save($other);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorCount(2, 'ul.gallery-grid--files .gallery-grid-item');
+        $this->assertSelectorCount(0, 'ul.gallery-grid--folders .gallery-grid-item');
+        $hrefs = $crawler->filter('ul.gallery-grid--files .gallery-grid-item__link')->each(static fn (Crawler $node): string => (string) $node->attr('href'));
+        $this->assertCount(2, array_filter($hrefs, static fn (string $href): bool => str_ends_with($href, self::METADATA_PATH) || str_ends_with($href, self::OTHER_PATH)));
+        $this->assertSelectorTextContains('[data-joli-media-tag-filter]', 'Tag: sport');
+        $this->assertStringEndsWith('/admin/media/explore', (string) $crawler->filter('[data-joli-media-tag-filter] a')->attr('href'));
+
+        // the filter is recursive from the current folder
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub?tag=sport');
+        $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
+
+        // the media picker supports it too
+        $this->client->request(Request::METHOD_GET, '/admin/media/choose-file?tag=sport');
+        $this->assertSelectorCount(2, 'ul.gallery-grid--files .gallery-grid-item');
+
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=unknown');
+        $this->assertSelectorCount(0, 'ul.gallery-grid--files .gallery-grid-item');
+    }
+
+    public function testThePaginationKeepsTheTag(): void
+    {
+        $paginator = $this->service('joli_media_easy_admin.paginator', MediaPaginator::class);
+        $paginator->paginateMedias(['items' => [], 'total' => 100, 'page' => 1, 'perPage' => 20], 'explore', 'sub', '', 'sport');
+
+        $this->assertStringContainsString('tag=sport', $paginator->generateUrlForPage(2));
+        $this->assertStringContainsString('page=2', $paginator->generateUrlForPage(2));
+    }
+
+    public function testTagsLinkToTheFilteredList(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport', 'to see']);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+
+        $links = $crawler->filter('#tab-general a[data-joli-media-tag]');
+        $this->assertCount(2, $links);
+        $this->assertSame('sport', trim($links->eq(0)->text()));
+        $this->assertStringEndsWith('/admin/media/explore?tag=sport', (string) $links->eq(0)->attr('href'));
+        $this->assertStringEndsWith('/admin/media/explore?tag=to%20see', (string) $links->eq(1)->attr('href'));
     }
 
     public function testDelete(): void

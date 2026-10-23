@@ -10,6 +10,15 @@
     {{ block('body_content_header_wrapper') }}
 
     <div class="gallery">
+        {% if tag is defined and tag != '' %}
+            <p class="joli-media-tag-filter" data-joli-media-tag-filter>
+                <span class="badge badge-secondary">{{ 'media.metadata.tag_filter'|trans({ '%tag%': tag }) }}</span>
+                <a href="{{ joli_media_admin_url(action, '.' != current_key ? { key: current_key } : { }, search != '' ? { query: search } : { }) }}" title="{{ 'media.metadata.tag_filter_remove'|trans }}">
+                    <i class="fa fa-xmark" aria-hidden="true"></i>
+                    <span class="visually-hidden">{{ 'media.metadata.tag_filter_remove'|trans }}</span>
+                </a>
+            </p>
+        {% endif %}
         {% if app.session.get('view_mode') == 'list' %}
             <table class="table datagrid gallery-list {{ (directories|length + medias|length) == 0 ? 'datagrid-empty' }}">
                 <thead>

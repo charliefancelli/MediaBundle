@@ -134,6 +134,7 @@
                 {{ include('@JoliMediaEasyAdmin/_as_image.html.twig') }}
             </span>
             <span class="gallery-grid-item__name">{{ media.filename }}</span>
+                {{ include('@JoliMediaEasyAdmin/_missing_alt.html.twig') }}
         </a>
     </li>
 {% endblock %}
@@ -146,6 +147,7 @@
                     {{ include('@JoliMediaEasyAdmin/_as_image.html.twig', { variation: 'joli_media_easy_admin_small' }) }}
                 </span>
                 <span class="gallery-list-item__name">{{ media.filename }}</span>
+                {{ include('@JoliMediaEasyAdmin/_missing_alt.html.twig') }}
             </a>
         </td>
         <td data-column="type" data-label="name" class="text-left" dir="ltr">
