@@ -23,6 +23,11 @@ readonly class MetadataManager
     ) {
     }
 
+    /**
+     * The dispatched event tells whether a row was deleted, from the row stored at the library and path of the
+     * metadata before the save. Limit: an empty detached instance whose row was moved since reports "deleted: false",
+     * although the Doctrine storage deletes the moved row (it finds it by id).
+     */
     public function save(MediaMetadata $metadata): void
     {
         // a row is deleted only when one is stored at the library and path of the metadata
