@@ -192,6 +192,37 @@ class ConfigurationTest extends TestCase
         yield 'a lone dot segment' => ['/./'];
     }
 
+    public function testMetadataIsDisabledByDefault(): void
+    {
+        $config = $this->processConfiguration([]);
+
+        $this->assertFalse($config['metadata']['enabled']);
+        $this->assertSame('doctrine', $config['metadata']['storage']);
+        $this->assertNull($config['metadata']['entity_manager']);
+        $this->assertSame(['alt', 'caption', 'copyright', 'tags'], $config['metadata']['fields']);
+    }
+
+    public function testMetadataFieldsCanBeRestricted(): void
+    {
+        $config = $this->processConfiguration([['metadata' => ['enabled' => true, 'fields' => ['alt', 'copyright']]]]);
+
+        $this->assertSame(['alt', 'copyright'], $config['metadata']['fields']);
+    }
+
+    public function testUnknownMetadataFieldIsRejected(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->processConfiguration([['metadata' => ['enabled' => true, 'fields' => ['title']]]]);
+    }
+
+    public function testEmptyMetadataFieldsAreRejected(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->processConfiguration([['metadata' => ['enabled' => true, 'fields' => []]]]);
+    }
+
     /**
      * @param array<string, mixed> $original
      */

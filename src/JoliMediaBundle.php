@@ -3,6 +3,7 @@
 namespace JoliCode\MediaBundle;
 
 use Doctrine\DBAL\Types\StringType;
+use Doctrine\ORM\EntityManagerInterface;
 use Imagine\Image\Metadata\ExifMetadataReader;
 use Imagine\Gd\Imagine as GdImagine;
 use Imagine\Gmagick\Imagine as GmagickImagine;
@@ -12,6 +13,7 @@ use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
 use JoliCode\MediaBundle\Doctrine\Type\MediaLongType;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Doctrine\Types;
+use JoliCode\MediaBundle\Metadata\MetadataField;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
@@ -89,6 +91,7 @@ class JoliMediaBundle extends AbstractBundle
                 ->append($this->addPreProcessorsNode())
                 ->append($this->addProcessorsNode())
                 ->append($this->addPostProcessorsNode())
+                ->append($this->addMetadataNode())
             ->end()
         ;
     }
@@ -118,6 +121,23 @@ class JoliMediaBundle extends AbstractBundle
         $builder->setParameter('joli_media.binary.pngquant', '%env(JOLI_MEDIA_PNGQUANT_BINARY)%');
 
         $builder->setParameter('joli_media.process_timeout', $config['process_timeout']);
+
+        // metadata
+        $metadataEnabled = $config['metadata']['enabled'];
+        $metadataDoctrineMapping = $metadataEnabled && 'doctrine' === $config['metadata']['storage'];
+
+        $builder->setParameter('joli_media.metadata.enabled', $metadataEnabled);
+        $builder->setParameter('joli_media.metadata.fields', $config['metadata']['fields']);
+        $builder->setParameter('joli_media.metadata.entity_manager', $config['metadata']['entity_manager']);
+        $builder->setParameter('joli_media.metadata.doctrine_mapping', $metadataDoctrineMapping);
+
+        if ($metadataDoctrineMapping && !interface_exists(EntityManagerInterface::class)) {
+            throw new \LogicException('The "doctrine" metadata storage requires the Doctrine ORM. Run "composer require doctrine/orm doctrine/doctrine-bundle", or set "joli_media.metadata.storage" to your own storage service.');
+        }
+
+        if ($metadataEnabled) {
+            $container->import('../config/metadata.php');
+        }
 
         $this->imagineProcessorEnabled = isset($config['processors']['imagine']) && $config['processors']['imagine']['options']['enabled'];
 
@@ -245,6 +265,35 @@ class JoliMediaBundle extends AbstractBundle
                 ],
             ]);
         }
+    }
+
+    private function addMetadataNode(): NodeDefinition
+    {
+        $treeBuilder = new TreeBuilder('metadata');
+
+        return $treeBuilder->getRootNode()
+            ->canBeEnabled()
+            ->info('Editorial metadata (alt, caption, copyright, tags) attached to the media.')
+            ->children()
+                ->scalarNode('storage')
+                    ->defaultValue('doctrine')
+                    ->cannotBeEmpty()
+                    ->info('Where the metadata are stored: "doctrine", or the id of a service implementing MetadataStorageInterface.')
+                ->end()
+                ->scalarNode('entity_manager')
+                    ->defaultNull()
+                    ->info('The name of the Doctrine entity manager that stores the metadata. Defaults to the default entity manager.')
+                ->end()
+                ->arrayNode('fields')
+                    ->requiresAtLeastOneElement()
+                    ->defaultValue(array_column(MetadataField::cases(), 'value'))
+                    ->enumPrototype()
+                        ->values(array_column(MetadataField::cases(), 'value'))
+                    ->end()
+                    ->info('The metadata fields that are available.')
+                ->end()
+            ->end()
+        ;
     }
 
     private function addLibrariesNode(): NodeDefinition

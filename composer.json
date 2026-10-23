@@ -46,7 +46,9 @@
     },
     "require-dev": {
         "ext-imagick": "*",
+        "doctrine/doctrine-bundle": "^2.19 || ^3.0",
         "doctrine/doctrine-fixtures-bundle": "^4.1",
+        "doctrine/orm": "^3.7",
         "easycorp/easyadmin-bundle": "^4.26 || ^5.0",
         "league/flysystem-aws-s3-v3": "^3",
         "league/flysystem-bundle": "^3.4",
@@ -70,6 +72,7 @@
         "sylius/grid-bundle": "<1.15 || >=2.0"
     },
     "suggest": {
+        "doctrine/orm": "required by the \"doctrine\" metadata storage",
         "ext-imagick": "required by the default \"imagick\" driver of the imagine processor",
         "league/flysystem-bundle": "Ease of use with FlySystem"
     },
