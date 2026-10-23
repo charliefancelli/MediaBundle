@@ -33,6 +33,8 @@ class MediaPaginator implements EntityPaginatorInterface
 
     private string $searchValue = '';
 
+    private string $tag = '';
+
     public function __construct(
         private readonly MediaAdminRouter $mediaAdminRouter,
     ) {
@@ -47,7 +49,7 @@ class MediaPaginator implements EntityPaginatorInterface
      * @param array{items: array<Media>, total: int, page: int, perPage: int} $paginationData
      * @param string                                                          $action         the media library action being paginated, eg. "explore"
      */
-    public function paginateMedias(array $paginationData, string $action, string $currentKey, string $searchValue = ''): self
+    public function paginateMedias(array $paginationData, string $action, string $currentKey, string $searchValue = '', string $tag = ''): self
     {
         $this->currentPage = $paginationData['page'];
         $this->pageSize = $paginationData['perPage'];
@@ -56,6 +58,7 @@ class MediaPaginator implements EntityPaginatorInterface
         $this->action = $action;
         $this->currentKey = $currentKey;
         $this->searchValue = $searchValue;
+        $this->tag = $tag;
 
         return $this;
     }
@@ -66,6 +69,10 @@ class MediaPaginator implements EntityPaginatorInterface
 
         if ('' !== $this->searchValue) {
             $queryParameters['query'] = $this->searchValue;
+        }
+
+        if ('' !== $this->tag) {
+            $queryParameters['tag'] = $this->tag;
         }
 
         return $this->mediaAdminRouter->generateUrl(

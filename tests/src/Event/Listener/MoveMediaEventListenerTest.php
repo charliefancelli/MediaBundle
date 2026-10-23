@@ -7,6 +7,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
@@ -19,6 +21,8 @@ use Symfony\Component\Console\Input\StringInput;
 
 class MoveMediaEventListenerTest extends WebTestCase
 {
+    use MetadataTestTrait;
+
     private AbstractPlatform $platform;
 
     private MediaType $mediaType;
@@ -48,6 +52,8 @@ class MoveMediaEventListenerTest extends WebTestCase
         /** @var LibraryContainer $libraries */
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
+
+        $this->setUpMetadata();
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -136,6 +142,72 @@ class MoveMediaEventListenerTest extends WebTestCase
                 yield [$from, $to];
             }
         }
+    }
+
+    public function testMetadataFollowsTheMedia(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->seed('auto_generate', 'sub/folder/deep/test.txt');
+
+        $this->originalStorage->move('/sub//folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
+
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test-2.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/test.txt'));
+        // the same path in another library is another media
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('auto_generate', 'sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('auto_generate', 'sub/folder/deep/test-2.txt'));
+    }
+
+    public function testMoveReplacesStaleMetadataAtTarget(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->seed('default', 'sub/folder/deep/test-2.txt'); // left behind by a file deleted outside of JoliMedia
+
+        $this->originalStorage->move('sub/folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
+
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test-2.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
+    public function testMetadataStaysWhenTheMoveFails(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->entityManager->clear();
+
+        // the metadata storage fails after the MediaType columns have been updated
+        $this->makeTheMetadataStorageFail();
+
+        try {
+            $this->originalStorage->move('sub/folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
+            $this->fail('The move should have failed.');
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The metadata storage is down.', $runtimeException->getMessage());
+        }
+
+        $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));
+        $this->assertFalse($this->originalStorage->has('sub/folder/deep/test-2.txt'));
+
+        $this->entityManager->clear();
+        $this->assertCount(1, $this->pageRepository->findBy(['mediaDefault' => 'sub/folder/deep/test.txt']));
+        $this->assertCount(1, $this->articleRepository->findBy(['media' => 'sub/folder/deep/test.txt']));
+        $this->assertCount(0, $this->pageRepository->findBy(['mediaDefault' => 'sub/folder/deep/test-2.txt']));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
+    public function testTheProviderDoesNotServeStaleMetadataAfterAMove(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        /** @var MetadataProvider $provider */
+        $provider = static::getContainer()->get('joli_media.metadata.provider');
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $provider->get('sub/folder/deep/test.txt')?->getAlt());
+        $this->assertNotInstanceOf(MediaMetadata::class, $provider->get('sub/folder/deep/test-2.txt'));
+
+        $this->originalStorage->move('sub/folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
+
+        $this->assertNull($provider->get('sub/folder/deep/test.txt'));
+        $moved = $provider->get('sub/folder/deep/test-2.txt');
+        $this->assertInstanceOf(MediaMetadata::class, $moved);
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $moved->getAlt());
     }
 
     protected static function getKernelClass(): string

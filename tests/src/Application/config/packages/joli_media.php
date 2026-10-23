@@ -14,6 +14,7 @@ return static function (ContainerConfigurator $container): void {
             ],
         ],
         'post_processors' => [],
+        'metadata' => ['enabled' => true],
         'libraries' => [
             'default' => [
                 'original' => [

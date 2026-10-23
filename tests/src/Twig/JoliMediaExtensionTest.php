@@ -4,10 +4,16 @@ namespace JoliCode\MediaBundle\Tests\Twig;
 
 use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
+use JoliCode\MediaBundle\Resolver\Resolver;
+use JoliCode\MediaBundle\Srcset\SrcsetBuilder;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\BaseTestCase;
+use JoliCode\MediaBundle\Twig\JoliMediaExtension;
 use Twig\Environment;
 
 class JoliMediaExtensionTest extends BaseTestCase
@@ -46,6 +52,85 @@ class JoliMediaExtensionTest extends BaseTestCase
                 $library->deleteAllVariations($path);
             }
         }
+    }
+
+    protected function tearDown(): void
+    {
+        // the metadata rows of the database are shared between tests
+        /** @var MetadataStorageInterface $storage */
+        $storage = static::getContainer()->get('test.joli_media.metadata.storage');
+
+        foreach (['default', 'auto_generate'] as $library) {
+            $storage->delete($library, self::FILTER_MEDIA);
+        }
+
+        parent::tearDown();
+    }
+
+    public function testTheMetadataFiltersReadTheStoredMetadata(): void
+    {
+        $this->saveMetadata('default', self::FILTER_MEDIA);
+
+        self::assertSame('A cat', $this->render("{{ path|joli_media_alt('Fallback') }}"));
+        self::assertSame('A caption', $this->render("{{ path|joli_media_caption('Fallback') }}"));
+        self::assertSame('Cat Corp', $this->render('{{ path|joli_media_copyright }}'));
+        self::assertSame('pets,cats', $this->render("{{ path|joli_media_tags|join(',') }}"));
+        self::assertSame('A cat', $this->render('{{ (path|joli_media_metadata).alt }}'));
+    }
+
+    public function testTheMetadataFiltersReturnTheFallbackWithoutMetadata(): void
+    {
+        self::assertSame('Fallback', $this->render("{{ path|joli_media_alt('Fallback') }}"));
+        self::assertSame('Fallback', $this->render("{{ path|joli_media_caption('Fallback') }}"));
+        self::assertSame('', $this->render('{{ path|joli_media_alt }}'));
+        self::assertSame('', $this->render('{{ path|joli_media_copyright }}'));
+        self::assertSame('', $this->render("{{ path|joli_media_tags|join(',') }}"));
+        self::assertSame('none', $this->render("{{ (path|joli_media_metadata) is null ? 'none' : 'some' }}"));
+    }
+
+    public function testTheMetadataFiltersHonorTheLibraryName(): void
+    {
+        $this->saveMetadata('auto_generate', self::FILTER_MEDIA);
+
+        self::assertSame('Fallback', $this->render("{{ path|joli_media_alt('Fallback') }}"));
+        self::assertSame('A cat', $this->render("{{ path|joli_media_alt('Fallback', 'auto_generate') }}"));
+        self::assertSame('Cat Corp', $this->render("{{ path|joli_media_copyright('auto_generate') }}"));
+    }
+
+    public function testTheMetadataFiltersAcceptMediaAndVariations(): void
+    {
+        $this->saveMetadata('auto_generate', self::FILTER_MEDIA);
+
+        $library = self::getLibraryContainer()->get('auto_generate');
+        $media = new Media(self::FILTER_MEDIA, $library->getOriginalStorage());
+
+        self::assertSame('A cat', $this->render("{{ media|joli_media_alt('Fallback') }}", ['media' => $media]));
+        // a variation reads the metadata of its original media
+        self::assertSame('A cat', $this->render("{{ media|joli_media_alt('Fallback') }}", ['media' => $media->createVariation('variation-standard')]));
+        self::assertSame('pets,cats', $this->render("{{ media|joli_media_tags|join(',') }}", ['media' => $media->createVariation('variation-standard')]));
+    }
+
+    public function testFiltersReturnTheFallbackWithoutProvider(): void
+    {
+        /** @var Resolver $resolver */
+        $resolver = static::getContainer()->get('joli_media.resolver');
+        /** @var SrcsetBuilder $srcsetBuilder */
+        $srcsetBuilder = static::getContainer()->get('joli_media.srcset_builder');
+        $extension = new JoliMediaExtension($resolver, $srcsetBuilder);
+        $filters = [];
+
+        foreach ($extension->getFilters() as $filter) {
+            $callable = $filter->getCallable();
+            \assert(\is_callable($callable));
+            $filters[$filter->getName()] = $callable;
+        }
+
+        self::assertSame('Fallback', $filters['joli_media_alt'](self::FILTER_MEDIA, 'Fallback'));
+        self::assertSame('Fallback', $filters['joli_media_caption'](self::FILTER_MEDIA, 'Fallback'));
+        self::assertNull($filters['joli_media_alt'](self::FILTER_MEDIA));
+        self::assertNull($filters['joli_media_copyright'](self::FILTER_MEDIA));
+        self::assertSame([], $filters['joli_media_tags'](self::FILTER_MEDIA));
+        self::assertNull($filters['joli_media_metadata'](self::FILTER_MEDIA));
     }
 
     public function testTheFilterStoresTheVariationWhenTheLibraryRequiresIt(): void
@@ -135,6 +220,30 @@ class JoliMediaExtensionTest extends BaseTestCase
         $libraries = static::getContainer()->get('joli_media.library_container');
 
         return $libraries;
+    }
+
+    private function saveMetadata(string $library, string $path): void
+    {
+        $metadata = new MediaMetadata($library, $path);
+        $metadata->setAlt('A cat');
+        $metadata->setCaption('A caption');
+        $metadata->setCopyright('Cat Corp');
+        $metadata->setTags(['pets', 'cats']);
+
+        /** @var MetadataManager $manager */
+        $manager = static::getContainer()->get('joli_media.metadata.manager');
+        $manager->save($metadata);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function render(string $template, array $context = []): string
+    {
+        /** @var Environment $twig */
+        $twig = static::getContainer()->get('twig');
+
+        return $twig->createTemplate($template)->render($context + ['path' => self::FILTER_MEDIA]);
     }
 
     private function renderUrlFilter(string $path, string $variation, string $library): string

@@ -9,6 +9,7 @@ action:
     remove: 'Remove'
     rename_directory: 'Rename directory'
     rename_file: 'Rename file'
+    save_metadata: 'Save the metadata'
     search: 'Search'
 browser:
     audio:
@@ -52,6 +53,20 @@ media:
     inaccessible:
         explanation: 'The media "%media%" is not accessible. It may have been deleted or moved.'
         label: 'Inaccessible media'
+    metadata:
+        alt: 'Alternative text'
+        alt_help: 'Describe the image for people who cannot see it. Leave empty for a decorative image.'
+        caption: 'Caption'
+        copyright: 'Copyright'
+        missing_alt: 'No alternative text'
+        path_too_long: 'The path of this media is too long: its metadata cannot be stored.'
+        saved_failure: 'Failed to save the metadata of the media "%media%".'
+        saved_success: 'The metadata of the media "%media%" were successfully saved'
+        tab: 'Metadata'
+        tag_filter: 'Tag: %tag%'
+        tag_filter_remove: 'Remove the tag filter'
+        tags: 'Tags'
+        tags_help: 'Separate the tags with commas.'
     move_failure: 'Failed to move the media "%from%" to the directory "%to%": %error%'
     move_modal:
         content: 'Do you really want to move this media to the directory "%directory%"?'

@@ -28,5 +28,7 @@ final class MediaEvents
 
     public const POST_MOVE_MEDIA = 'joli.media.post_move_media';
 
+    public const POST_SAVE_METADATA = 'joli.media.post_save_metadata';
+
     public const PRE_RESOLVE_MEDIA = 'joli.media.pre_resolve_media';
 }

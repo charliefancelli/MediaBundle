@@ -140,7 +140,9 @@
 {% endblock %}
 
 {% block main %}
-    {% if config.isVisible('show_variations_list') and media.variations|length > 0 %}
+    {% set has_variations_tab = config.isVisible('show_variations_list') and media.variations|length > 0 %}
+    {% set has_metadata_tab = metadata_enabled|default(false) %}
+    {% if has_variations_tab or has_metadata_tab %}
         <div class="nav-tabs-custom form-tabs-tablist">
             <ul class="nav nav-tabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -151,6 +153,7 @@
                         {{ 'general'|trans }}
                     </a>
                 </li>
+                {% if has_variations_tab %}
                 <li class="nav-item" role="presentation">
                     <a class="nav-link{% if displayed_tab == 2 %} active{% endif %}" href="#tab-variations" id="tablist-tab-variations" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
                         <span class="icon tab-nav-item-icon">
@@ -159,6 +162,17 @@
                         {{ 'variation.label_plural'|trans }}
                     </a>
                 </li>
+                {% endif %}
+                {% if has_metadata_tab %}
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link{% if displayed_tab == 3 %} active{% endif %}" href="#tab-metadata" id="tablist-tab-metadata" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
+                        <span class="icon tab-nav-item-icon">
+                            <i class="fa fa-tags"></i>
+                        </span>
+                        {{ 'media.metadata.tab'|trans }}
+                    </a>
+                </li>
+                {% endif %}
             </ul>
         </div>
 
@@ -169,6 +183,7 @@
                         {{ block('media_general') }}
                     </div>
                 </div>
+                {% if has_variations_tab %}
                 <div id="tab-variations" class="tab-pane{% if displayed_tab == 2 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-variations">
                     <div class="row">
                         <table class="table datagrid file-explorer-list {{ media.variations|length == 0 ? 'datagrid-empty' }}">
@@ -246,6 +261,14 @@
                         </table>
                     </div>
                 </div>
+                {% endif %}
+                {% if has_metadata_tab %}
+                <div id="tab-metadata" class="tab-pane{% if displayed_tab == 3 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-metadata">
+                    <div class="row">
+                        {{ block('media_metadata') }}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     {% else %}
@@ -265,6 +288,16 @@
                         {{ include('@JoliMediaEasyAdmin/_preview.html.twig', { variation: 'joli_media_easy_admin_large', className: 'media-preview' }) }}
                     </dd>
                 </div>
+                {% if media_tags is defined and media_tags|length > 0 %}
+                    <div class="data-row">
+                        <dt>{{ 'media.metadata.tags'|trans }}</dt>
+                        <dd>
+                            {% for media_tag in media_tags %}
+                                <a href="{{ joli_media_admin_url('explore', { }, { tag: media_tag }) }}" class="badge badge-secondary" data-joli-media-tag>{{ media_tag }}</a>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                {% endif %}
                 <div class="data-row">
                     <dt>{{ 'media.url.label_long'|trans }}</dt>
                     <dd class="d-flex jm-box">
@@ -341,6 +374,28 @@
                     </div>
                 {% endif %}
             </dl>
+        </div>
+    </div>
+{% endblock %}
+
+{% block media_metadata %}
+    <div class="form-panel">
+        <div class="form-panel-body">
+            {% if metadata_path_too_long|default(false) %}
+                <p class="text-muted">{{ 'media.metadata.path_too_long'|trans }}</p>
+            {% elseif metadata_form is not null %}
+                {{ form_start(metadata_form, { attr: { id: 'metadata-form' } }) }}
+                    {{ form_widget(metadata_form) }}
+                {{ form_end(metadata_form) }}
+
+                {% if metadata_form.tags is defined %}
+                    <datalist id="{{ metadata_form.tags.vars.attr.list }}">
+                        {% for tag in metadata_tags %}
+                            <option value="{{ tag }}"></option>
+                        {% endfor %}
+                    </datalist>
+                {% endif %}
+            {% endif %}
         </div>
     </div>
 {% endblock %}

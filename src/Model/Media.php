@@ -6,6 +6,8 @@ use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Exception\InvalidSerializedMediaException;
 use JoliCode\MediaBundle\Library\Library;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Variation\Variation;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -16,6 +18,11 @@ class Media implements StorableInterface
      * @var callable(): LibraryContainer|null
      */
     public static $libraryContainerInitializer;
+
+    /**
+     * @var (callable(): MetadataProvider)|null
+     */
+    public static $metadataProviderInitializer;
 
     /**
      * @var array<string, MediaVariation>
@@ -179,6 +186,18 @@ class Media implements StorableInterface
     public function getPath(): string
     {
         return $this->path;
+    }
+
+    /**
+     * The editorial metadata of the media, or null when there are none or when the metadata feature is disabled.
+     */
+    public function getMetadata(): ?MediaMetadata
+    {
+        if (!isset(self::$metadataProviderInitializer)) {
+            return null;
+        }
+
+        return (self::$metadataProviderInitializer)()->get($this);
     }
 
     /**

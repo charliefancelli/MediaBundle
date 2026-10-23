@@ -9,6 +9,7 @@ action:
     remove: 'Détacher'
     rename_directory: 'Renommer le dossier'
     rename_file: 'Renommer le fichier'
+    save_metadata: 'Enregistrer les métadonnées'
     search: 'Rechercher'
 browser:
     audio:
@@ -55,6 +56,20 @@ media:
     move_modal:
         content: 'Souhaitez-vous vraiment déplacer ce média vers le dossier "%directory%" ?'
         title: 'Déplacer le média'
+    metadata:
+        alt: 'Texte alternatif'
+        alt_help: 'Décrivez l''image pour les personnes qui ne peuvent pas la voir. Laissez vide pour une image décorative.'
+        caption: 'Légende'
+        copyright: 'Copyright'
+        missing_alt: 'Pas de texte alternatif'
+        path_too_long: 'Le chemin de ce média est trop long : ses métadonnées ne peuvent pas être enregistrées.'
+        saved_failure: 'Échec de l''enregistrement des métadonnées du média "%media%".'
+        saved_success: 'Les métadonnées du média "%media%" ont été enregistrées avec succès'
+        tab: 'Métadonnées'
+        tag_filter: 'Tag : %tag%'
+        tag_filter_remove: 'Retirer le filtre par tag'
+        tags: 'Tags'
+        tags_help: 'Séparez les tags par des virgules.'
     move_failure: 'Échec du déplacement du média "%from%" vers le dossier "%to%" : %error%'
     move_success: 'Le fichier "%from%" a été déplacé avec succès vers "%to%"'
     name: 'Nom'

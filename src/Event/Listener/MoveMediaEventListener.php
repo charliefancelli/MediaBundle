@@ -9,6 +9,7 @@ use JoliCode\MediaBundle\Cache\MediaEntityMetadata;
 use JoliCode\MediaBundle\Cache\MediaEntityMetadataWarmer;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Event\PostMoveMediaEvent;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 
 readonly class MoveMediaEventListener
@@ -16,6 +17,7 @@ readonly class MoveMediaEventListener
     public function __construct(
         private Registry $managerRegistry,
         private CacheInterface $cache,
+        private ?MetadataStorageInterface $metadataStorage = null,
     ) {
     }
 
@@ -55,6 +57,8 @@ readonly class MoveMediaEventListener
                     ->execute()
                 ;
             }
+
+            $this->metadataStorage?->move($event->originalStorage->getLibrary()->getName(), $event->from, $event->to);
 
             // Commit the transaction if all operations were successful
             foreach ($objectManagers as $objectManager) {

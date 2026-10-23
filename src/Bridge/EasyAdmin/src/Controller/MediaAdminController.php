@@ -11,6 +11,7 @@ use JoliCode\MediaBundle\Bridge\EasyAdmin\Router\MediaAdminRouter;
 use JoliCode\MediaBundle\Bridge\Form\Type\CreateDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\DeleteDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\DeleteType;
+use JoliCode\MediaBundle\Bridge\Form\Type\MetadataType;
 use JoliCode\MediaBundle\Bridge\Form\Type\MoveType;
 use JoliCode\MediaBundle\Bridge\Form\Type\RenameDirectoryType;
 use JoliCode\MediaBundle\Bridge\Form\Type\RenameType;
@@ -22,6 +23,10 @@ use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Exception\UnprocessableMediaException;
 use JoliCode\MediaBundle\Library\Library;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Resolver\Resolver;
@@ -29,6 +34,7 @@ use JoliCode\MediaBundle\Storage\OriginalStorage;
 use League\Flysystem\PathTraversalDetected;
 use League\Flysystem\UnableToListContents;
 use League\Flysystem\UnableToWriteFile;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
@@ -67,6 +73,12 @@ class MediaAdminController extends AbstractController
         private readonly MediaPaginator $mediaPaginator,
         private readonly AssetRegistrar $assetRegistrar,
         private readonly ?AuthorizationCheckerInterface $authorizationChecker = null,
+        private readonly ?MetadataProvider $metadataProvider = null,
+        private readonly ?MetadataManager $metadataManager = null,
+        private readonly ?MetadataStorageInterface $metadataStorage = null,
+        /** @var list<string> */
+        private readonly array $metadataFields = [],
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -561,6 +573,71 @@ class MediaAdminController extends AbstractController
             );
         }
 
+        $metadataForm = null;
+        $metadataPathTooLong = false;
+        $metadataTags = [];
+        $metadataAvailable = $this->metadataProvider instanceof MetadataProvider && $this->metadataManager instanceof MetadataManager;
+        $metadataAction = new AdminAction(
+            libraryName: $this->getLibrary()->getName(),
+            path: Resolver::normalizePath($key),
+        );
+        $metadataEnabled = $metadataAvailable && $this->isActionGranted(AdminAction::EDIT_METADATA, $metadataAction);
+
+        if ($metadataAvailable && !$metadataEnabled && $request->isMethod(Request::METHOD_POST) && $request->request->has('metadata')) {
+            // nothing is bound or read before the grant is checked
+            $this->denyAccessUnlessGranted(AdminAction::EDIT_METADATA, $metadataAction);
+        }
+
+        if ($metadataEnabled) {
+            if (mb_strlen($key) > MediaMetadata::PATH_MAX_LENGTH) {
+                $metadataPathTooLong = true;
+            } else {
+                $metadataForm = $this->createMetadataForm($key);
+                $metadataForm->handleRequest($request);
+
+                if ($metadataForm->isSubmitted()) {
+                    $displayedTab = 3;
+
+                    if ($metadataForm->isValid()) {
+                        try {
+                            // the working copy is merged onto the stored metadata by the storage: the stored
+                            // instance is never changed here, so a failed save leaves nothing unsaved behind
+                            $this->metadataManager->save($metadataForm->getData());
+                            $this->addFlash(
+                                'success',
+                                $this->translator->trans(
+                                    'media.metadata.saved_success',
+                                    ['%media%' => htmlspecialchars(basename($key))],
+                                    'JoliMediaEasyAdminBundle',
+                                )
+                            );
+
+                            return $this->redirect($this->mediaAdminRouter->generateUrl(
+                                'show',
+                                ['key' => $key, '_tab' => 3],
+                            ));
+                        } catch (\Exception $e) {
+                            // the message may hold SQL or user input, and flashes are rendered raw
+                            $this->logger?->error('Unable to save the metadata of the media "{media}".', ['media' => $key, 'exception' => $e]);
+                        }
+                    }
+
+                    $this->addFlash(
+                        'danger',
+                        $this->translator->trans(
+                            'media.metadata.saved_failure',
+                            ['%media%' => htmlspecialchars(basename($key))],
+                            'JoliMediaEasyAdminBundle',
+                        )
+                    );
+                }
+
+                if ($this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true)) {
+                    $metadataTags = $this->metadataStorage->listTags($this->getLibrary()->getName(), 100);
+                }
+            }
+        }
+
         if ($this->resolver->isMediaProcessable($media)) {
             $variations = $this->getLibrary()->getVariationContainer()->list();
 
@@ -578,6 +655,13 @@ class MediaAdminController extends AbstractController
             }
         }
 
+        // fall back to the first tab when the requested one is not rendered
+        $displayedTab = (int) $displayedTab;
+        $hasVariationsTab = $this->config->isVisible('show_variations_list') && [] !== $media->getVariations();
+        if ((2 === $displayedTab && !$hasVariationsTab) || (3 === $displayedTab && !$metadataEnabled) || $displayedTab < 1 || $displayedTab > 3) {
+            $displayedTab = 1;
+        }
+
         return new Response($this->twig->render('@JoliMediaEasyAdmin/show.html.twig', [
             'breadcrumb' => $this->generateBreadcrumb($key, 'explore'),
             'config' => $this->config,
@@ -585,6 +669,13 @@ class MediaAdminController extends AbstractController
             'displayed_tab' => $displayedTab,
             'file' => $key,
             'media' => $media,
+            'metadata_enabled' => $metadataEnabled,
+            'metadata_form' => $metadataEnabled ? $metadataForm?->createView() : null,
+            'metadata_path_too_long' => $metadataPathTooLong,
+            'metadata_tags' => $metadataTags,
+            'media_tags' => $this->metadataProvider instanceof MetadataProvider && \in_array('tags', $this->metadataFields, true)
+                ? ($this->metadataProvider->get($key, $this->getLibrary()->getName())?->getTags() ?? [])
+                : [],
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
         ]));
@@ -691,6 +782,11 @@ class MediaAdminController extends AbstractController
         }
     }
 
+    private function isActionGranted(string $attribute, mixed $subject): bool
+    {
+        return $this->authorizationChecker?->isGranted($attribute, $subject) ?? true;
+    }
+
     /**
      * @param string $action the media library action being rendered: "explore", "choose" or "chooseDirectory"
      */
@@ -698,12 +794,21 @@ class MediaAdminController extends AbstractController
     {
         $this->assetRegistrar->registerOn($adminContext);
 
+        // the tag filter needs the metadata storage and the "tags" field, and is ignored without them
+        $tagFilterEnabled = $this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true) && 'chooseDirectory' !== $action;
+
         if ($request->query->get('view_mode')) {
             $request->getSession()->set('view_mode', $request->query->get('view_mode'));
 
+            // the search and the tag filter survive a change of the view mode
+            $keptQuery = array_filter(
+                ['query' => $request->query->getString('query', ''), 'tag' => $tagFilterEnabled ? $request->query->getString('tag', '') : ''],
+                static fn (string $value): bool => '' !== $value,
+            );
+
             return $this->redirect($this->mediaAdminRouter->generateUrl($action, [
                 'key' => $key,
-            ]));
+            ], $keptQuery));
         }
 
         $currentKey = Resolver::normalizePath($key);
@@ -711,6 +816,9 @@ class MediaAdminController extends AbstractController
             libraryName: $this->getLibrary()->getName(),
             path: $currentKey,
         ));
+
+        $tag = $tagFilterEnabled ? trim($request->query->getString('tag', '')) : '';
+        $hasTag = '' !== $tag;
 
         // the search is only supported by the explore view and the media picker modal
         $searchValue = 'chooseDirectory' !== $action
@@ -741,7 +849,10 @@ class MediaAdminController extends AbstractController
                 $dirFilter = static fn (string $directory): bool => str_contains(strtolower($directory), strtolower($searchValue));
             }
 
-            $directories = $this->getOriginalStorage()->listDirectories($currentKey, recursive: $hasSearch, filter: $dirFilter);
+            // a tag only applies to the media, the directories are not listed when filtering by tag
+            $directories = $hasTag
+                ? []
+                : $this->getOriginalStorage()->listDirectories($currentKey, recursive: $hasSearch, filter: $dirFilter);
             natcasesort($directories);
         } catch (ForbiddenPathException|PathTraversalDetected|UnableToListContents) {
             $this->addFlash(
@@ -762,33 +873,41 @@ class MediaAdminController extends AbstractController
             default => 'explore',
         };
 
-        $mediaFilter = null;
-        $mediaSort = null;
-
-        if ($hasSearch) {
-            $mediaFilter = static fn (Media $media): bool => str_contains(strtolower($media->getPath()), strtolower($searchValue));
-
-            // recursive listings are not sorted by default and depend on the storage
-            // adapter's traversal order, which would make pagination unstable
-            $mediaSort = static fn (Media $a, Media $b): int => strtolower($a->getPath()) <=> strtolower($b->getPath());
-        }
+        // recursive listings are not sorted by default and depend on the storage
+        // adapter's traversal order, which would make pagination unstable
+        $mediaSort = static fn (Media $a, Media $b): int => strtolower($a->getPath()) <=> strtolower($b->getPath());
 
         try {
-            $paginatedMedias = $this->getOriginalStorage()->listMediasPaginated(
-                $currentKey,
-                recursive: $hasSearch,
-                page: $request->query->getInt('page', 1),
-                perPage: $this->config->getPaginationSize(),
-                filter: $mediaFilter,
-                sort: $mediaSort,
-            );
+            if ($hasTag) {
+                $paginatedMedias = $this->paginateTaggedMedias($tag, $currentKey, $searchValue, $request->query->getInt('page', 1), $mediaSort);
+            } else {
+                $paginatedMedias = $this->getOriginalStorage()->listMediasPaginated(
+                    $currentKey,
+                    recursive: $hasSearch,
+                    page: $request->query->getInt('page', 1),
+                    perPage: $this->config->getPaginationSize(),
+                    filter: $hasSearch
+                        ? static fn (Media $media): bool => str_contains(strtolower($media->getPath()), strtolower($searchValue))
+                        : null,
+                    sort: $hasSearch ? $mediaSort : null,
+                );
+            }
         } catch (\OutOfRangeException) {
             throw new BadRequestException('The requested page number is out of range.');
         }
 
-        $paginator = $this->mediaPaginator->paginateMedias($paginatedMedias, $action, $currentKey, $searchValue);
+        $paginator = $this->mediaPaginator->paginateMedias($paginatedMedias, $action, $currentKey, $searchValue, $tag);
 
-        return new Response($this->twig->render('@JoliMediaEasyAdmin/list.html.twig', [
+        $metadataVariables = [];
+        if ($this->metadataProvider instanceof MetadataProvider) {
+            // one query for the whole page
+            $metadataVariables = [
+                'metadata' => $this->metadataProvider->getMany($paginator->getResults(), $this->getLibrary()->getName()),
+                'metadata_alt_enabled' => \in_array('alt', $this->metadataFields, true),
+            ];
+        }
+
+        return new Response($this->twig->render('@JoliMediaEasyAdmin/list.html.twig', $metadataVariables + [
             'action' => $action,
             'base_template' => \sprintf('@JoliMediaEasyAdmin/%s.html.twig', $template),
             'breadcrumb' => $this->generateBreadcrumb($currentKey, $action),
@@ -804,7 +923,56 @@ class MediaAdminController extends AbstractController
             'parent_key' => \dirname($currentKey),
             'rename_directory_form' => $this->createRenameDirectoryForm($key)->createView(),
             'search' => $searchValue,
+            'tag' => $tag,
         ]));
+    }
+
+    /**
+     * Lists the medias of the library which carry the tag, below the given directory,
+     * without listing the storage: only the tagged paths are looked at.
+     *
+     * @return array{items: array<Media>, total: int, page: int, perPage: int, totalPages: int}
+     */
+    private function paginateTaggedMedias(string $tag, string $currentKey, string $searchValue, int $page, callable $sort): array
+    {
+        $prefix = '' === $currentKey || '.' === $currentKey ? '' : $currentKey . '/';
+        $storage = $this->getOriginalStorage();
+        $medias = [];
+
+        foreach ($this->metadataStorage?->findPathsByTag($this->getLibrary()->getName(), $tag) ?? [] as $path) {
+            if ('' !== $prefix && !str_starts_with($path, $prefix)) {
+                continue;
+            }
+
+            if ('' !== $searchValue && !str_contains(strtolower($path), strtolower($searchValue))) {
+                continue;
+            }
+
+            // the metadata of a file deleted outside of JoliMedia may remain
+            if (!$storage->has($path)) {
+                continue;
+            }
+
+            $medias[] = new Media($path, $storage);
+        }
+
+        usort($medias, $sort);
+
+        $perPage = $this->config->getPaginationSize();
+        $total = \count($medias);
+        $totalPages = max(1, (int) ceil($total / $perPage));
+
+        if ($page < 1 || $page > $totalPages) {
+            throw new \OutOfRangeException('The requested page number is out of range.');
+        }
+
+        return [
+            'items' => \array_slice($medias, ($page - 1) * $perPage, $perPage),
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $perPage,
+            'totalPages' => $totalPages,
+        ];
     }
 
     private function createDeleteForm(?string $path = null): FormInterface
@@ -849,6 +1017,36 @@ class MediaAdminController extends AbstractController
         }
 
         return $form;
+    }
+
+    /**
+     * The form is bound to an unmanaged working copy, so that nothing reaches the
+     * entity manager before the submission is granted and valid.
+     */
+    private function createMetadataForm(string $path): FormInterface
+    {
+        $libraryName = $this->getLibrary()->getName();
+        $stored = $this->metadataProvider?->get($path, $libraryName);
+        $copy = new MediaMetadata($libraryName, $path);
+
+        if ($stored instanceof MediaMetadata) {
+            $this->copyMetadata($stored, $copy);
+        }
+
+        return $this->formFactory->create(MetadataType::class, $copy, [
+            'action' => $this->mediaAdminRouter->generateUrl('show', ['key' => $path]),
+            'method' => Request::METHOD_POST,
+            'translation_domain' => $this->config->getTranslationDomain(),
+            'fields' => $this->metadataFields,
+        ]);
+    }
+
+    private function copyMetadata(MediaMetadata $from, MediaMetadata $to): void
+    {
+        $to->setAlt($from->getAlt());
+        $to->setCaption($from->getCaption());
+        $to->setCopyright($from->getCopyright());
+        $to->setTags($from->getTags());
     }
 
     private function createMoveFileForm(?string $path = null): FormInterface

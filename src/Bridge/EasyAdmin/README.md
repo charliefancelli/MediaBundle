@@ -7,6 +7,7 @@ It features:
  * a media library to manage media in EasyAdmin
  * a media browser to select media in EasyAdmin forms
  * a media preview in EasyAdmin list views
+ * the edition of the media metadata (alternative text, caption, copyright, tags), when they are enabled
 
 ## Installation
 

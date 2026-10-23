@@ -68,6 +68,17 @@ This value can be overridden for each processor, pre-processor or post-processor
 
 The configured value is also exposed as the ``joli_media.process_timeout`` container parameter, so it can be re-used in your own service definitions.
 
+Metadata configuration
+----------------------
+
+The ``metadata`` configuration node enables the optional storage of an alternative text, a caption, a copyright and some tags for each media. It is disabled by default: read the `Media metadata documentation <../misc-features/metadata.rst>`_ to learn more about it.
+
+.. code-block:: yaml
+
+    joli_media:
+        metadata:
+            enabled: true
+
 Example minimal configuration
 -----------------------------
 
@@ -100,6 +111,7 @@ Here is an example minimal configuration that defines one library and one variat
 
 To configure the bundle to your needs, you can explore the following configuration sections:
 
+- `Media metadata <../misc-features/metadata.rst>`_
 - `Post-processors configuration <../variations/post-processors.rst>`_
 - `Processors configuration <../variations/processors.rst>`_
 - `Variations configuration <../variations/variations.rst>`_

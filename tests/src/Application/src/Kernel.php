@@ -36,9 +36,12 @@ final class Kernel extends SymfonyKernel
 {
     use MicroKernelTrait;
 
-    public function __construct()
+    /**
+     * @param string $environment "test", or "no_metadata" for the same application with the metadata disabled
+     */
+    public function __construct(string $environment = 'test')
     {
-        parent::__construct('test', false);
+        parent::__construct($environment, false);
     }
 
     public function registerBundles(): iterable

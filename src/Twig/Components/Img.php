@@ -4,6 +4,7 @@ namespace JoliCode\MediaBundle\Twig\Components;
 
 use JoliCode\MediaBundle\Exception\MediaNotFoundException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Model\NullMedia;
@@ -15,6 +16,8 @@ use JoliCode\MediaBundle\Variation\Variation;
 use League\Flysystem\UnableToReadFile;
 use Psr\Log\LoggerInterface;
 use Symfony\UX\TwigComponent\Attribute\AsTwigComponent;
+use Symfony\UX\TwigComponent\Attribute\PreMount;
+use Symfony\UX\TwigComponent\ComponentAttributes;
 
 #[AsTwigComponent(
     template: '@JoliMediaBundle/templates/components/Img.html.twig',
@@ -48,8 +51,56 @@ class Img
         private readonly SrcsetBuilder $srcsetBuilder,
         private readonly DimensionPredictor $dimensionPredictor,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?MetadataProvider $metadataProvider = null,
     ) {
         $this->srcset = new Srcset();
+    }
+
+    /**
+     * Falls back to the stored alt text when none is given. The alt stays a regular
+     * HTML attribute: an explicit one (even an empty one, for a decorative image, or
+     * one given as an "img:alt" or nested attribute) is left untouched and so is its
+     * position among the other attributes.
+     *
+     * Without the metadata, the data are returned untouched: the markup is exactly
+     * the one of the previous versions.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    #[PreMount]
+    public function preMount(array $data): array
+    {
+        if (!$this->metadataProvider instanceof MetadataProvider) {
+            return $data;
+        }
+
+        // the Picture component always passes its "alt", null when it was not given: this is "not provided"
+        if (\array_key_exists('alt', $data) && null === $data['alt']) {
+            unset($data['alt']);
+        }
+
+        if ($this->hasAlt($data)) {
+            return $data;
+        }
+
+        $library = \is_string($data['library'] ?? null) && '' !== $data['library'] ? $data['library'] : null;
+        $media = $data['media'] ?? $data['path'] ?? null;
+
+        if (\is_string($media)) {
+            $media = $this->stripUrlPath($media, $library);
+        }
+
+        if ($media instanceof Media || \is_string($media)) {
+            $alt = $this->metadataProvider->get($media, $library)?->getAlt();
+
+            if (null !== $alt) {
+                $data['alt'] = $alt;
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -218,6 +269,47 @@ class Img
             $this->srcset = new Srcset();
             $this->sizes = $sizes;
         }
+    }
+
+    /**
+     * The path may carry the URL path of the library ("/media/original/a.jpg"), as mount()
+     * accepts it: it is removed as text, the storage is not queried (mount() does it). A
+     * path really starting with the URL path of its library is ambiguous, and read stripped.
+     */
+    private function stripUrlPath(string $path, ?string $library): string
+    {
+        $path = Resolver::normalizePath($path);
+
+        if (null !== $library && !$this->libraries->has($library)) {
+            return $path;
+        }
+
+        $urlPath = Resolver::normalizePath($this->libraries->get($library)->getOriginalStorage()->getUrlPath());
+
+        if ('' !== $urlPath && str_starts_with($path, $urlPath . '/')) {
+            return substr($path, \strlen($urlPath) + 1);
+        }
+
+        return $path;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function hasAlt(array $data): bool
+    {
+        if (\array_key_exists('alt', $data) || \array_key_exists('img:alt', $data)) {
+            return true;
+        }
+
+        // the attributes passed as a whole, like the Picture component does with its "img:" ones
+        $attributes = $data['attributes'] ?? [];
+
+        if ($attributes instanceof ComponentAttributes) {
+            return $attributes->has('alt') || $attributes->has('img:alt');
+        }
+
+        return \is_array($attributes) && (\array_key_exists('alt', $attributes) || \array_key_exists('img:alt', $attributes));
     }
 
     /**

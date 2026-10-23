@@ -6,6 +6,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
@@ -17,6 +18,10 @@ use Symfony\Component\Console\Input\StringInput;
 
 class DeleteFolderEventListenerTest extends WebTestCase
 {
+    use MetadataTestTrait;
+
+    private EntityManagerInterface $entityManager;
+
     private EntityRepository $articleRepository;
 
     private EntityRepository $pageRepository;
@@ -30,12 +35,16 @@ class DeleteFolderEventListenerTest extends WebTestCase
 
         /** @var EntityManagerInterface */
         $entityManager = $container->get(EntityManagerInterface::class);
+        $this->entityManager = $entityManager;
+
         $this->articleRepository = $entityManager->getRepository(Article::class);
         $this->pageRepository = $entityManager->getRepository(Page::class);
 
         /** @var LibraryContainer */
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
+
+        $this->setUpMetadata();
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -130,6 +139,68 @@ class DeleteFolderEventListenerTest extends WebTestCase
         yield 'consecutive_slashes' => ['sub//folder'];
         yield 'consecutive_slashes_with_leading' => ['/sub//folder'];
         yield 'consecutive_slashes_with_leading_and_trailing' => ['/sub//folder/'];
+    }
+
+    public function testMetadataIsDeletedWithTheFolder(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->seed('default', 'sub/folder/deep/nested/a.png');
+        $this->seed('default', 'sub/folder/circle-pattern.png');
+        $this->seed('default', 'sub/folder/deeper/b.png');
+        $this->seed('auto_generate', 'sub/folder/deep/test.txt');
+
+        $this->originalStorage->deleteDirectory('/sub//folder/deep/');
+
+        $this->assertFalse($this->originalStorage->has('sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/nested/a.png'));
+        // neither the parent folder nor a sibling sharing the prefix are affected
+        $this->assertSame('Alt of sub/folder/circle-pattern.png', $this->altOf('default', 'sub/folder/circle-pattern.png'));
+        $this->assertSame('Alt of sub/folder/deeper/b.png', $this->altOf('default', 'sub/folder/deeper/b.png'));
+        // the same path in another library is another media
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('auto_generate', 'sub/folder/deep/test.txt'));
+
+        // no row is left under the path of the trash either
+        $this->entityManager->clear();
+        $trashed = array_filter(
+            $this->entityManager->getRepository(MediaMetadata::class)->findAll(),
+            static fn (MediaMetadata $metadata): bool => str_contains($metadata->getPath(), 'deep/test.txt') && 'default' === $metadata->getLibrary(),
+        );
+        $this->assertSame([], $trashed);
+    }
+
+    public function testMetadataStaysWhenTheFolderDeletionIsRestricted(): void
+    {
+        $this->seed('default', 'sub/folder/circle-pattern.png');
+        $this->seed('default', 'sub/folder/deep/test.txt');
+
+        try {
+            $this->originalStorage->deleteDirectory('sub/folder');
+            $this->fail('The deletion should have been refused.');
+        } catch (MediaInUseException) {
+        }
+
+        $this->assertSame('Alt of sub/folder/circle-pattern.png', $this->altOf('default', 'sub/folder/circle-pattern.png'));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
+    public function testMetadataStaysWhenTheFolderDeletionFails(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+
+        $this->makeTheMetadataStorageFail();
+
+        try {
+            $this->originalStorage->deleteDirectory('sub/folder/deep');
+            $this->fail('The deletion should have failed.');
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The metadata storage is down.', $runtimeException->getMessage());
+        }
+
+        $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));
+        // the SET_NULL column update has been rolled back
+        $this->assertSame(1, $this->pageRepository->count(['mediaSetNull' => 'sub/folder/deep/test.txt']));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
     }
 
     protected static function getKernelClass(): string

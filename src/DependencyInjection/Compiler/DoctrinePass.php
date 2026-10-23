@@ -11,7 +11,16 @@ class DoctrinePass implements CompilerPassInterface
     {
         $bundles = $container->getParameter('kernel.bundles');
 
+        if ($container->hasParameter('joli_media.metadata.doctrine_mapping') && $container->getParameter('joli_media.metadata.doctrine_mapping') && !isset($bundles['DoctrineBundle'])) {
+            throw new \LogicException('The "doctrine" metadata storage requires the Doctrine ORM. Run "composer require doctrine/orm doctrine/doctrine-bundle", or set "joli_media.metadata.storage" to your own storage service.');
+        }
+
         if (isset($bundles['DoctrineBundle'])) {
+            // the Doctrine listeners move and delete the metadata inside their transaction
+            if ($container->hasDefinition('joli_media.metadata.event_listener.follow')) {
+                $container->removeDefinition('joli_media.metadata.event_listener.follow');
+            }
+
             return;
         }
 

@@ -2,7 +2,9 @@
 
 namespace JoliCode\MediaBundle;
 
+use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Compiler\DoctrineOrmMappingsPass;
 use Doctrine\DBAL\Types\StringType;
+use Doctrine\ORM\EntityManagerInterface;
 use Imagine\Image\Metadata\ExifMetadataReader;
 use Imagine\Gd\Imagine as GdImagine;
 use Imagine\Gmagick\Imagine as GmagickImagine;
@@ -12,6 +14,7 @@ use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
 use JoliCode\MediaBundle\Doctrine\Type\MediaLongType;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Doctrine\Types;
+use JoliCode\MediaBundle\Metadata\MetadataField;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
@@ -54,6 +57,9 @@ class JoliMediaBundle extends AbstractBundle
         // before the Doctrine check below
         Media::$libraryContainerInitializer = fn (): ?object => $this->container->get('joli_media.library_container');
         MediaVariation::$converterInitializer = fn (): ?object => $this->container->get('joli_media.converter');
+        Media::$metadataProviderInitializer = $this->container->has('joli_media.metadata.provider')
+            ? fn (): ?object => $this->container->get('joli_media.metadata.provider')
+            : null;
 
         if (!class_exists(StringType::class)) {
             return;
@@ -71,6 +77,20 @@ class JoliMediaBundle extends AbstractBundle
 
         $container->addCompilerPass(new CollectorPass());
         $container->addCompilerPass(new DoctrinePass());
+
+        if (class_exists(DoctrineOrmMappingsPass::class)) {
+            // a null "joli_media.metadata.entity_manager" is skipped: the default entity manager is used
+            // the last two arguments ($aliasMap and $reportFieldsWhereDeclared) are positional: DoctrineBundle 3
+            // has neither of them (with ORM 3, the fields are always reported where they are declared)
+            $container->addCompilerPass(DoctrineOrmMappingsPass::createAttributeMappingDriver(
+                ['JoliCode\MediaBundle\Metadata\Model'],
+                [__DIR__ . '/Metadata/Model'],
+                ['joli_media.metadata.entity_manager', 'doctrine.default_entity_manager'],
+                'joli_media.metadata.doctrine_mapping',
+                [],
+                true,
+            ));
+        }
     }
 
     public function configure(DefinitionConfigurator $definition): void
@@ -89,6 +109,7 @@ class JoliMediaBundle extends AbstractBundle
                 ->append($this->addPreProcessorsNode())
                 ->append($this->addProcessorsNode())
                 ->append($this->addPostProcessorsNode())
+                ->append($this->addMetadataNode())
             ->end()
         ;
     }
@@ -118,6 +139,33 @@ class JoliMediaBundle extends AbstractBundle
         $builder->setParameter('joli_media.binary.pngquant', '%env(JOLI_MEDIA_PNGQUANT_BINARY)%');
 
         $builder->setParameter('joli_media.process_timeout', $config['process_timeout']);
+
+        // metadata
+        $metadataEnabled = $config['metadata']['enabled'];
+        $metadataDoctrineMapping = $metadataEnabled && 'doctrine' === $config['metadata']['storage'];
+
+        $builder->setParameter('joli_media.metadata.enabled', $metadataEnabled);
+        $builder->setParameter('joli_media.metadata.fields', $config['metadata']['fields']);
+        $builder->setParameter('joli_media.metadata.entity_manager', $config['metadata']['entity_manager']);
+
+        // only defined when true: it is the "enabled" parameter of the Doctrine mapping pass
+        if ($metadataDoctrineMapping) {
+            $builder->setParameter('joli_media.metadata.doctrine_mapping', true);
+        }
+
+        if ($metadataDoctrineMapping && !interface_exists(EntityManagerInterface::class)) {
+            throw new \LogicException('The "doctrine" metadata storage requires the Doctrine ORM. Run "composer require doctrine/orm doctrine/doctrine-bundle", or set "joli_media.metadata.storage" to your own storage service.');
+        }
+
+        if ($metadataEnabled) {
+            $container->import('../config/metadata.php');
+
+            // a custom storage replaces the Doctrine one
+            if (!$metadataDoctrineMapping) {
+                $builder->removeDefinition('joli_media.metadata.storage.doctrine');
+                $builder->setAlias('joli_media.metadata.storage', $config['metadata']['storage']);
+            }
+        }
 
         $this->imagineProcessorEnabled = isset($config['processors']['imagine']) && $config['processors']['imagine']['options']['enabled'];
 
@@ -245,6 +293,39 @@ class JoliMediaBundle extends AbstractBundle
                 ],
             ]);
         }
+    }
+
+    private function addMetadataNode(): NodeDefinition
+    {
+        $treeBuilder = new TreeBuilder('metadata');
+
+        return $treeBuilder->getRootNode()
+            ->canBeEnabled()
+            ->info('Editorial metadata (alt, caption, copyright, tags) attached to the media.')
+            ->children()
+                ->scalarNode('storage')
+                    ->defaultValue('doctrine')
+                    ->cannotBeEmpty()
+                    ->info('Where the metadata are stored: "doctrine", or the id of a service implementing MetadataStorageInterface.')
+                ->end()
+                ->scalarNode('entity_manager')
+                    ->defaultNull()
+                    ->info('The name of the Doctrine entity manager that stores the metadata. Defaults to the default entity manager.')
+                ->end()
+                ->arrayNode('fields')
+                    ->requiresAtLeastOneElement()
+                    ->defaultValue(array_column(MetadataField::cases(), 'value'))
+                    ->enumPrototype()
+                        ->values(array_column(MetadataField::cases(), 'value'))
+                    ->end()
+                    ->validate()
+                        ->ifTrue(static fn (array $fields): bool => \count($fields) !== \count(array_unique($fields)))
+                        ->thenInvalid('The "fields" configuration cannot contain duplicates.')
+                    ->end()
+                    ->info('The metadata fields that are available.')
+                ->end()
+            ->end()
+        ;
     }
 
     private function addLibrariesNode(): NodeDefinition

@@ -6,12 +6,17 @@ use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Exception\InvalidSerializedMediaException;
 use JoliCode\MediaBundle\Library\Library;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
+use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\BaseTestCase;
 use JoliCode\MediaBundle\Tests\Storage\RecordingTemporaryUrlGenerator;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
 class MediaTest extends BaseTestCase
@@ -27,6 +32,13 @@ class MediaTest extends BaseTestCase
         $this->binary = new Binary('image/jpeg', Format::JPEG->value, BaseTestCase::getFixtureBinaryContent(BaseTestCase::JPEG_FIXTURE_PATH));
         $this->media = new Media('test.jpg', $this->originalStorage, $this->binary);
         $this->media->store();
+    }
+
+    protected function tearDown(): void
+    {
+        Media::$metadataProviderInitializer = null;
+
+        parent::tearDown();
     }
 
     public function testGetPath(): void
@@ -258,5 +270,49 @@ class MediaTest extends BaseTestCase
         $this->expectExceptionMessage('Invalid serialized media payload.');
 
         $restored->__unserialize(['path' => 'test.jpg']);
+    }
+
+    public function testGetMetadataWithoutProviderReturnsNull(): void
+    {
+        Media::$metadataProviderInitializer = null;
+
+        self::assertNull($this->media->getMetadata());
+    }
+
+    public function testGetMetadataUsesTheProvider(): void
+    {
+        $kernel = static::bootKernel();
+        $container = static::getContainer();
+
+        $application = new Application($kernel);
+        $application->setAutoExit(false);
+        $application->run(new StringInput('doctrine:fixtures:load --purge-with-truncate --no-interaction --quiet'));
+
+        /** @var MetadataManager $manager */
+        $manager = $container->get('joli_media.metadata.manager');
+        $metadata = new MediaMetadata('default', 'media-test-metadata.jpg');
+        $metadata->setAlt('Stored alt');
+
+        $manager->save($metadata);
+
+        try {
+            // the bundle boot() set the initializer
+            self::assertNotNull(Media::$metadataProviderInitializer);
+
+            $media = new Media('media-test-metadata.jpg', $this->originalStorage);
+            self::assertSame('Stored alt', $media->getMetadata()?->getAlt());
+            self::assertNull((new Media('media-test-none.jpg', $this->originalStorage))->getMetadata());
+
+            // nothing new is serialized
+            self::assertSame(['path', 'library'], array_keys($media->__serialize()));
+        } finally {
+            $metadata->setAlt(null);
+            $manager->save($metadata);
+        }
+    }
+
+    protected static function getKernelClass(): string
+    {
+        return Kernel::class;
     }
 }

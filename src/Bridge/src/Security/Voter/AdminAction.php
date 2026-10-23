@@ -22,6 +22,8 @@ readonly class AdminAction
 
     public const REGENERATE_VARIATION = 'joli_media_regenerate_variation';
 
+    public const EDIT_METADATA = 'joli_media_edit_metadata';
+
     public const ALL = [
         self::LIST,
         self::SHOW,
@@ -32,6 +34,7 @@ readonly class AdminAction
         self::RENAME_DIRECTORY,
         self::UPLOAD,
         self::REGENERATE_VARIATION,
+        self::EDIT_METADATA,
     ];
 
     public function __construct(

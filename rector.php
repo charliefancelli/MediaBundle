@@ -42,6 +42,7 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         RemoveAlwaysTrueIfConditionRector::class => [
+            __DIR__ . '/tests/src/Metadata/MetadataDisabledApplicationTest.php',
             __DIR__ . '/tests/src/Twig/Component/PictureTest.php',
         ],
         ControllerMethodInjectionToConstructorRector::class => [
