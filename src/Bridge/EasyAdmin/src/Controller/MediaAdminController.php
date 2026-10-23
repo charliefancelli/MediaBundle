@@ -600,12 +600,14 @@ class MediaAdminController extends AbstractController
 
                     if ($metadataForm->isValid()) {
                         try {
-                            $this->metadataManager->save($this->applyWorkingCopy($metadataForm->getData(), $key));
+                            // the working copy is merged onto the stored metadata by the storage: the stored
+                            // instance is never changed here, so a failed save leaves nothing unsaved behind
+                            $this->metadataManager->save($metadataForm->getData());
                             $this->addFlash(
                                 'success',
                                 $this->translator->trans(
                                     'media.metadata.saved_success',
-                                    ['%media%' => basename($key)],
+                                    ['%media%' => htmlspecialchars(basename($key))],
                                     'JoliMediaEasyAdminBundle',
                                 )
                             );
@@ -624,7 +626,7 @@ class MediaAdminController extends AbstractController
                         'danger',
                         $this->translator->trans(
                             'media.metadata.saved_failure',
-                            ['%media%' => basename($key)],
+                            ['%media%' => htmlspecialchars(basename($key))],
                             'JoliMediaEasyAdminBundle',
                         )
                     );
@@ -792,12 +794,15 @@ class MediaAdminController extends AbstractController
     {
         $this->assetRegistrar->registerOn($adminContext);
 
+        // the tag filter needs the metadata storage and the "tags" field, and is ignored without them
+        $tagFilterEnabled = $this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true) && 'chooseDirectory' !== $action;
+
         if ($request->query->get('view_mode')) {
             $request->getSession()->set('view_mode', $request->query->get('view_mode'));
 
             // the search and the tag filter survive a change of the view mode
             $keptQuery = array_filter(
-                ['query' => $request->query->getString('query', ''), 'tag' => $request->query->getString('tag', '')],
+                ['query' => $request->query->getString('query', ''), 'tag' => $tagFilterEnabled ? $request->query->getString('tag', '') : ''],
                 static fn (string $value): bool => '' !== $value,
             );
 
@@ -812,10 +817,7 @@ class MediaAdminController extends AbstractController
             path: $currentKey,
         ));
 
-        // the tag filter needs the metadata storage and the "tags" field, and is ignored without them
-        $tag = $this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true) && 'chooseDirectory' !== $action
-            ? trim($request->query->getString('tag', ''))
-            : '';
+        $tag = $tagFilterEnabled ? trim($request->query->getString('tag', '')) : '';
         $hasTag = '' !== $tag;
 
         // the search is only supported by the explore view and the media picker modal
@@ -1037,15 +1039,6 @@ class MediaAdminController extends AbstractController
             'translation_domain' => $this->config->getTranslationDomain(),
             'fields' => $this->metadataFields,
         ]);
-    }
-
-    private function applyWorkingCopy(MediaMetadata $copy, string $path): MediaMetadata
-    {
-        $libraryName = $this->getLibrary()->getName();
-        $target = $this->metadataProvider?->get($path, $libraryName) ?? new MediaMetadata($libraryName, $path);
-        $this->copyMetadata($copy, $target);
-
-        return $target;
     }
 
     private function copyMetadata(MediaMetadata $from, MediaMetadata $to): void

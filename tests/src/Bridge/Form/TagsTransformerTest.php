@@ -30,7 +30,7 @@ class TagsTransformerTest extends TestCase
     {
         $this->expectException(TransformationFailedException::class);
 
-        (new TagsTransformer())->reverseTransform(['a']); // @phpstan-ignore argument.type
+        (new TagsTransformer())->reverseTransform(['a']);
     }
 
     public function testTransform(): void

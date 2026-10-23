@@ -43,7 +43,7 @@
                     </label>
 
                     {% if search %}
-                        <a href="{{ joli_media_admin_url(action, '.' != current_key ? { key: current_key } : { }) }}" class="content-search-reset">
+                        <a href="{{ joli_media_admin_url(action, '.' != current_key ? { key: current_key } : { }, tag is defined and tag != '' ? { tag: tag } : { }) }}" class="content-search-reset">
                             <twig:ea:Icon name="internal:xmark" />
                         </a>
                     {% endif %}

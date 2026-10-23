@@ -2,9 +2,11 @@
 
 namespace JoliCode\MediaBundle\Tests\Bridge\EasyAdmin\Controller;
 
+use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Asset\AssetRegistrar;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Config\Config;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Controller\MediaAdminController;
@@ -12,20 +14,25 @@ use JoliCode\MediaBundle\Bridge\EasyAdmin\Paginator\MediaPaginator;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Router\MediaAdminRouter;
 use JoliCode\MediaBundle\Conversion\Converter;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
 use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
+use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Resolver\Resolver;
 use JoliCode\MediaBundle\Tests\Application\Doctrine\QueryCounterMiddleware;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
+use JoliCode\MediaBundle\Tests\BaseTestCase;
+use JoliCode\MediaBundle\Tests\Metadata\UnsavableMetadataStorage;
 use Psr\Container\ContainerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -418,6 +425,13 @@ class MediaAdminControllerTest extends WebTestCase
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport');
         $this->assertSame('sport', $crawler->filter('form[data-component="media-search"] input[name="tag"]')->attr('value'));
 
+        // submitting the explore form searches inside the tagged medias
+        $this->client->submit($crawler->filter('form[data-component="media-search"]')->form(['query' => 'circle']));
+        $this->assertResponseIsSuccessful();
+        $this->assertStringContainsString('tag=sport', $this->client->getRequest()->getUri());
+        $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
+        $this->assertSelectorExists('[data-joli-media-tag-filter]');
+
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file?tag=sport');
         $this->assertSame('sport', $crawler->filter('form[data-component="media-search"] input[name="tag"]')->attr('value'));
 
@@ -448,6 +462,94 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertStringContainsString('tag=sport', $location);
         $this->assertStringContainsString('query=circle', $location);
         $this->assertStringNotContainsString('view_mode', $location);
+    }
+
+    public function testTheSearchResetLinkKeepsTheTag(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport&query=circle');
+
+        $href = (string) $crawler->filter('.content-search-reset')->attr('href');
+        $this->assertStringContainsString('tag=sport', $href);
+        $this->assertStringNotContainsString('query=', $href);
+    }
+
+    public function testTheViewModeRedirectDropsAnIgnoredTag(): void
+    {
+        $this->useController(['alt', 'caption', 'copyright']);
+
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore?view_mode=list&tag=sport&query=circle');
+
+        $this->assertResponseRedirects();
+        $location = (string) $this->client->getResponse()->headers->get('Location');
+        $this->assertStringContainsString('query=circle', $location);
+        $this->assertStringNotContainsString('tag=', $location);
+    }
+
+    public function testAMetadataSubmissionWithoutAValidCsrfTokenIsRefused(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => 'Forged',
+            'metadata[_token]' => 'not-the-token',
+        ]);
+        $this->client->submit($form);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorTextContains('.alert-danger', 'Failed to save the metadata');
+        $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
+    }
+
+    public function testAFailedSaveShowsTheStoredMetadata(): void
+    {
+        $this->saveMetadata('Stored alt', 'Stored caption', 'Stored copyright', ['stored']);
+
+        // a manager whose storage cannot save, kept for both requests
+        $this->client->disableReboot();
+        $provider = $this->service('joli_media.metadata.provider', MetadataProvider::class);
+        $this->useController(['alt', 'caption', 'copyright', 'tags'], null, new MetadataManager(new UnsavableMetadataStorage($this->service('doctrine', Registry::class)), $provider, new EventDispatcher()));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => 'Not saved',
+            'metadata[tags]' => 'changed, other',
+        ]);
+        $crawler = $this->client->submit($form);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorTextContains('.alert-danger', 'Failed to save the metadata');
+        // the tags of the media page are the stored ones, not the submitted ones
+        $this->assertSame(['stored'], $crawler->filter('#tab-general a[data-joli-media-tag]')->each(static fn (Crawler $node): string => trim($node->text())));
+        // the submitted values stay in the form, to be fixed and submitted again
+        $this->assertSame('Not saved', $crawler->filter('#tab-metadata [name="metadata[alt]"]')->attr('value'));
+        $this->assertStoredMetadataIsUnchanged();
+    }
+
+    public function testTheMetadataFlashesEscapeTheMediaName(): void
+    {
+        $path = 'sub/x<i>y.png';
+        $originalStorage = $this->service('joli_media.library_container', LibraryContainer::class)->getDefault()->getOriginalStorage();
+        $binary = new Binary('image/png', 'png', BaseTestCase::getFixtureBinaryContent(BaseTestCase::PNG_FIXTURE_PATH));
+        (new Media($path, $originalStorage, $binary))->store();
+
+        try {
+            $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . rawurlencode('sub') . '/' . rawurlencode('x<i>y.png'));
+            $this->assertResponseIsSuccessful();
+            $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form(['metadata[alt]' => 'An alt']);
+            $this->client->submit($form);
+            $crawler = $this->client->followRedirect();
+
+            $this->assertSelectorTextContains('.alert-success', 'x<i>y.png');
+            $this->assertCount(0, $crawler->filter('.alert-success i'));
+
+            $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form(['metadata[alt]' => str_repeat('a', MediaMetadata::ALT_MAX_LENGTH + 1)]);
+            $crawler = $this->client->submit($form);
+
+            $this->assertSelectorTextContains('.alert-danger', 'x<i>y.png');
+            $this->assertCount(0, $crawler->filter('.alert-danger i'));
+        } finally {
+            $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class)->delete('default', $path);
+            $originalStorage->delete($path);
+        }
     }
 
     public function testTheRenderedPaginationKeepsTheTag(): void
@@ -868,11 +970,11 @@ class MediaAdminControllerTest extends WebTestCase
     }
 
     /**
-     * Replaces the controller by one with other metadata fields and, optionally, another page size.
+     * Replaces the controller by one with other metadata fields and, optionally, another page size and another manager.
      *
      * @param list<string> $fields
      */
-    private function useController(array $fields, ?int $paginationSize = null): void
+    private function useController(array $fields, ?int $paginationSize = null, ?MetadataManager $metadataManager = null): void
     {
         $container = static::getContainer();
         $config = $this->service('joli_media_easy_admin.config', Config::class);
@@ -905,7 +1007,7 @@ class MediaAdminControllerTest extends WebTestCase
             $this->service('joli_media_easy_admin.asset.registrar', AssetRegistrar::class),
             $this->service('security.authorization_checker', AuthorizationCheckerInterface::class),
             $this->service('joli_media.metadata.provider', MetadataProvider::class),
-            null,
+            $metadataManager,
             $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class),
             $fields,
         );

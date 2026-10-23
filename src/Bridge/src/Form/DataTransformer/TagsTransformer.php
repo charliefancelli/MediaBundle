@@ -10,7 +10,7 @@ use Symfony\Component\Form\Exception\TransformationFailedException;
  *
  * The normalization of the tags (whitespace, empty values, duplicates) is the job of MediaMetadata::setTags().
  *
- * @implements DataTransformerInterface<list<string>, string>
+ * @implements DataTransformerInterface<list<string>, mixed>
  */
 readonly class TagsTransformer implements DataTransformerInterface
 {
@@ -27,7 +27,7 @@ readonly class TagsTransformer implements DataTransformerInterface
             return [];
         }
 
-        if (!\is_string($value)) { // @phpstan-ignore function.alreadyNarrowedType (the interface is not strictly typed)
+        if (!\is_string($value)) {
             throw new TransformationFailedException('Expected a string or null.');
         }
 
