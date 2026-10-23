@@ -7,7 +7,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use JoliCode\MediaBundle\Cache\MediaEntityMetadata;
 use JoliCode\MediaBundle\Cache\MediaEntityMetadataWarmer;
 use JoliCode\MediaBundle\DeleteBehavior\Strategy;
+use JoliCode\MediaBundle\Doctrine\Type\MediaLongType;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
+use JoliCode\MediaBundle\Doctrine\Types;
 use JoliCode\MediaBundle\Library\LibraryContainer;
 use Symfony\Contracts\Cache\CacheInterface;
 
@@ -78,7 +80,6 @@ readonly class MediaUsageFinder
         /** @var array<string, array<class-string, array<string, Strategy>>> $deleteBehaviors */
         $deleteBehaviors = $this->cache->get(MediaEntityMetadataWarmer::MEDIA_DELETE_BEHAVIORS_CACHE_KEY, static fn (): array => []);
 
-        $mediaType = new MediaType();
         $usages = [];
 
         foreach ($fields as $field) {
@@ -90,19 +91,29 @@ readonly class MediaUsageFinder
 
             /** @var EntityManagerInterface $objectManager */
             $objectManager = $this->managerRegistry->getManager($field->objectManagerName);
-            $databasePath = (string) $mediaType->convertToDatabaseValue($path, $objectManager->getConnection()->getDatabasePlatform());
-            $blocksDeletion = Strategy::RESTRICT === ($deleteBehaviors[$field->objectManagerName][$field->entityName][$field->fieldName] ?? null);
+            $classMetadata = $objectManager->getClassMetadata($field->entityName);
+            $type = Types::MEDIA_LONG === $classMetadata->getTypeOfField($field->fieldName) ? new MediaLongType() : new MediaType();
 
-            $entities = $objectManager->getRepository($field->entityName)->findBy([$field->fieldName => $databasePath], null, $remaining);
+            try {
+                $databasePath = (string) $type->convertToDatabaseValue($path, $objectManager->getConnection()->getDatabasePlatform());
+            } catch (\InvalidArgumentException) {
+                // the path is too long for a "media" column: nothing can match there
+                continue;
+            }
+
+            $blocksDeletion = Strategy::RESTRICT === ($deleteBehaviors[$field->objectManagerName][$field->entityName][$field->fieldName] ?? null);
+            $orderBy = array_fill_keys($classMetadata->getIdentifierFieldNames(), 'ASC');
+
+            $entities = $objectManager->getRepository($field->entityName)->findBy([$field->fieldName => $databasePath], [] === $orderBy ? null : $orderBy, $remaining);
 
             foreach ($entities as $entity) {
-                $identifier = $objectManager->getClassMetadata($field->entityName)->getIdentifierValues($entity);
+                $identifier = $this->normalizeIdentifier($objectManager, $classMetadata->getIdentifierValues($entity));
 
                 $usages[] = new MediaUsage(
-                    $entity instanceof \Stringable ? (string) $entity : \sprintf('%s #%s', (new \ReflectionClass($entity))->getShortName(), implode('-', $identifier)),
+                    $entity instanceof \Stringable ? (string) $entity : \sprintf('%s #%s', $classMetadata->getReflectionClass()->getShortName(), $identifier),
                     $field->entityName,
                     $field->fieldName,
-                    1 === \count($identifier) ? reset($identifier) : ([] === $identifier ? null : implode('-', $identifier)),
+                    $identifier,
                     null,
                     $blocksDeletion,
                 );
@@ -110,6 +121,41 @@ readonly class MediaUsageFinder
         }
 
         return $usages;
+    }
+
+    /**
+     * Flattens the identifier values (they may be objects for association keys) into a scalar,
+     * composite keys being joined with "-".
+     *
+     * @param array<mixed> $values
+     */
+    private function normalizeIdentifier(EntityManagerInterface $objectManager, array $values): int|string|null
+    {
+        $parts = [];
+
+        foreach ($values as $value) {
+            if (\is_int($value) || \is_string($value)) {
+                $parts[] = $value;
+            } elseif ($value instanceof \Stringable) {
+                $parts[] = (string) $value;
+            } elseif (\is_object($value)) {
+                $nested = $this->normalizeIdentifier($objectManager, $objectManager->getClassMetadata($value::class)->getIdentifierValues($value));
+
+                if (null === $nested) {
+                    return null;
+                }
+
+                $parts[] = $nested;
+            } else {
+                return null;
+            }
+        }
+
+        if ([] === $parts) {
+            return null;
+        }
+
+        return 1 === \count($parts) ? $parts[0] : implode('-', $parts);
     }
 
     private function completeUsage(MediaUsage $usage): MediaUsage

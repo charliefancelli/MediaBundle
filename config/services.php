@@ -228,6 +228,7 @@ return static function (ContainerConfigurator $container): void {
 
         // usages
         ->set('joli_media.usage_finder', MediaUsageFinder::class)
+        // public: fetched from the container by applications and tests, nothing injects it yet
         ->public()
         ->args([
             service('doctrine')->nullOnInvalid(),
