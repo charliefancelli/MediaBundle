@@ -4,6 +4,7 @@
 
 - feature - Add a `MediaUsageFinder` service telling where a media is used: in the Doctrine `media` and `media_long` columns, and in the places reported by the services implementing `MediaUsageProviderInterface` (a JSON field, a CMS block...), which can also prevent the deletion of the media - see the [media usages documentation](doc/misc-features/media-usages.rst)
 - feature - The EasyAdmin bridge shows a "Usages" tab on the page of a media, and lists the places where a media is used when its deletion is refused - see the [EasyAdmin documentation](doc/bridges/easy-admin.rst)
+- improvement - The EasyAdmin bridge now HTML-escapes the media path, the field and the entity name in the flash message shown when a media cannot be deleted because it is used - see the [EasyAdmin documentation](doc/bridges/easy-admin.rst)
 
 ## [0.10.0] - 2026-10-05
 
