@@ -19,7 +19,7 @@ class MetadataDisabledTest extends TestCase
         (new DoctrinePass())->process($container);
 
         $this->assertFalse($container->getParameter('joli_media.metadata.enabled'));
-        $this->assertFalse($container->getParameter('joli_media.metadata.doctrine_mapping'));
+        $this->assertFalse($container->hasParameter('joli_media.metadata.doctrine_mapping'));
         $this->assertNull($container->getParameter('joli_media.metadata.entity_manager'));
         $this->assertSame(['alt', 'caption', 'copyright', 'tags'], $container->getParameter('joli_media.metadata.fields'));
         $this->assertSame([], array_filter(
@@ -47,7 +47,7 @@ class MetadataDisabledTest extends TestCase
         $container = $this->createContainer(['enabled' => true, 'storage' => 'app.metadata_storage']);
 
         $this->assertTrue($container->getParameter('joli_media.metadata.enabled'));
-        $this->assertFalse($container->getParameter('joli_media.metadata.doctrine_mapping'));
+        $this->assertFalse($container->hasParameter('joli_media.metadata.doctrine_mapping'));
     }
 
     /**

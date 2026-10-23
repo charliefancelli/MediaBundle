@@ -38,6 +38,18 @@ class MediaMetadataTest extends TestCase
         $this->assertSame($kept, $this->tagEntities($m)[1]);
     }
 
+    public function testCaseOnlyTagChangeReusesTheTagEntity(): void
+    {
+        $m = new MediaMetadata('default', 'a.png');
+        $m->setTags(['Sport']);
+        $tag = $this->tagEntities($m)[0];
+
+        $m->setTags(['sport']);
+
+        $this->assertSame(['sport'], $m->getTags());
+        $this->assertSame($tag, $this->tagEntities($m)[0]);
+    }
+
     public function testIsEmpty(): void
     {
         $m = new MediaMetadata('default', 'a.png');

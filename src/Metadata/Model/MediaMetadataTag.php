@@ -51,6 +51,11 @@ class MediaMetadataTag
         return $this->name;
     }
 
+    public function setName(string $name): void
+    {
+        $this->name = $name;
+    }
+
     public function getPosition(): int
     {
         return $this->position;

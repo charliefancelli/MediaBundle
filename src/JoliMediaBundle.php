@@ -11,7 +11,6 @@ use Imagine\Gmagick\Imagine as GmagickImagine;
 use Imagine\Imagick\Imagine as ImagickImagine;
 use JoliCode\MediaBundle\DependencyInjection\Compiler\CollectorPass;
 use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
-use JoliCode\MediaBundle\DependencyInjection\Compiler\MetadataMappingPass;
 use JoliCode\MediaBundle\Doctrine\Type\MediaLongType;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Doctrine\Types;
@@ -78,11 +77,12 @@ class JoliMediaBundle extends AbstractBundle
 
         if (class_exists(DoctrineOrmMappingsPass::class)) {
             // a null "joli_media.metadata.entity_manager" is skipped: the default entity manager is used
-            $container->addCompilerPass(new MetadataMappingPass(DoctrineOrmMappingsPass::createAttributeMappingDriver(
+            $container->addCompilerPass(DoctrineOrmMappingsPass::createAttributeMappingDriver(
                 ['JoliCode\MediaBundle\Metadata\Model'],
                 [__DIR__ . '/Metadata/Model'],
                 ['joli_media.metadata.entity_manager', 'doctrine.default_entity_manager'],
-            )));
+                'joli_media.metadata.doctrine_mapping',
+            ));
         }
     }
 
@@ -140,7 +140,11 @@ class JoliMediaBundle extends AbstractBundle
         $builder->setParameter('joli_media.metadata.enabled', $metadataEnabled);
         $builder->setParameter('joli_media.metadata.fields', $config['metadata']['fields']);
         $builder->setParameter('joli_media.metadata.entity_manager', $config['metadata']['entity_manager']);
-        $builder->setParameter('joli_media.metadata.doctrine_mapping', $metadataDoctrineMapping);
+
+        // only defined when true: it is the "enabled" parameter of the Doctrine mapping pass
+        if ($metadataDoctrineMapping) {
+            $builder->setParameter('joli_media.metadata.doctrine_mapping', true);
+        }
 
         if ($metadataDoctrineMapping && !interface_exists(EntityManagerInterface::class)) {
             throw new \LogicException('The "doctrine" metadata storage requires the Doctrine ORM. Run "composer require doctrine/orm doctrine/doctrine-bundle", or set "joli_media.metadata.storage" to your own storage service.');

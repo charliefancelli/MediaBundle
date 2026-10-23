@@ -157,17 +157,18 @@ class MediaMetadata
 
         $names = array_values($names);
 
-        // existing tags whose name is kept are reused, so the unchanged ones are neither deleted nor inserted again
+        // existing tags whose name is kept (ignoring the case) are reused, so the unchanged ones are neither deleted nor inserted again
         $existing = [];
         foreach ($this->tags as $tag) {
-            $existing[$tag->getName()] = $tag;
+            $existing[mb_strtolower($tag->getName())] = $tag;
         }
 
         $this->tags->clear();
 
         foreach ($names as $position => $name) {
-            if (isset($existing[$name])) {
-                $tag = $existing[$name];
+            if (isset($existing[mb_strtolower($name)])) {
+                $tag = $existing[mb_strtolower($name)];
+                $tag->setName($name);
                 $tag->setPosition($position);
             } else {
                 $tag = new MediaMetadataTag($this, $name, $position);
