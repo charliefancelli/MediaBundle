@@ -365,6 +365,26 @@ class PictureTest extends WebTestCase
         self::assertStringNotContainsString('A circle pattern', $html);
     }
 
+    public function testPictureImgAltAttributeWins(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        foreach (['variation-standard', 'variation-large'] as $variation) {
+            $html = $this->renderPicture(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => $variation, 'img:alt' => 'Given']);
+
+            self::assertStringContainsString('alt="Given"', $html, $variation);
+            self::assertStringNotContainsString('A circle pattern', $html, $variation);
+            self::assertSame(1, substr_count($html, 'alt='), $variation);
+        }
+    }
+
+    public function testPictureWithoutAltHasNoBareAltAttribute(): void
+    {
+        $html = $this->renderPicture(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']);
+
+        self::assertDoesNotMatchRegularExpression('/\salt[\s>\/]/', $html);
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;

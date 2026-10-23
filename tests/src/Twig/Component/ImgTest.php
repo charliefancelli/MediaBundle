@@ -468,8 +468,41 @@ class ImgTest extends BaseTestCase
         $dimensionPredictor = $container->get('joli_media.dimension_predictor');
         $img = new Img($resolver, $libraries, $srcsetBuilder, $dimensionPredictor);
 
-        self::assertSame(['path' => 'a.jpg'], $img->preMount(['path' => 'a.jpg', 'alt' => null]));
+        // without the metadata, the data are left untouched: the markup is exactly the one of the previous versions
+        self::assertSame(['path' => 'a.jpg', 'alt' => null], $img->preMount(['path' => 'a.jpg', 'alt' => null]));
         self::assertSame(['path' => 'a.jpg', 'alt' => ''], $img->preMount(['path' => 'a.jpg', 'alt' => '']));
+        self::assertSame(['path' => 'a.jpg'], $img->preMount(['path' => 'a.jpg']));
+    }
+
+    public function testStoredAltIsUsedForAPathCarryingTheUrlPrefix(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        self::assertStringContainsString(
+            'alt="A circle pattern"',
+            $this->renderImg(['path' => '/media/original/' . self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']),
+        );
+    }
+
+    public function testStoredAltIsEscaped(): void
+    {
+        $this->saveAlt('a"><script>alert(1)</script>');
+
+        $html = $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']);
+
+        self::assertStringContainsString('alt="a&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"', $html);
+        self::assertStringNotContainsString('<script>', $html);
+    }
+
+    public function testAnAltGivenAsANestedAttributeWins(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $html = $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard', 'img:alt' => 'Given']);
+
+        self::assertStringContainsString('alt="Given"', $html);
+        self::assertStringNotContainsString('A circle pattern', $html);
+        self::assertSame(1, substr_count($html, 'alt='));
     }
 
     protected static function getKernelClass(): string
