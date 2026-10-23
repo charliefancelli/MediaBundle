@@ -4,6 +4,7 @@ namespace JoliCode\MediaBundle\Metadata\Model;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use JoliCode\MediaBundle\Resolver\Resolver;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -29,24 +30,24 @@ class MediaMetadata
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
-    #[ORM\Column(type: 'integer')]
+    #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null; // @phpstan-ignore property.unusedType (set by Doctrine)
 
-    #[ORM\Column(type: 'string', length: self::LIBRARY_MAX_LENGTH)]
+    #[ORM\Column(type: Types::STRING, length: self::LIBRARY_MAX_LENGTH)]
     private string $library;
 
-    #[ORM\Column(type: 'string', length: self::PATH_MAX_LENGTH)]
+    #[ORM\Column(type: Types::STRING, length: self::PATH_MAX_LENGTH)]
     private string $path;
 
-    #[ORM\Column(type: 'string', length: self::ALT_MAX_LENGTH, nullable: true)]
+    #[ORM\Column(type: Types::STRING, length: self::ALT_MAX_LENGTH, nullable: true)]
     #[Assert\Length(max: self::ALT_MAX_LENGTH)]
     private ?string $alt = null;
 
-    #[ORM\Column(type: 'string', length: self::CAPTION_MAX_LENGTH, nullable: true)]
+    #[ORM\Column(type: Types::STRING, length: self::CAPTION_MAX_LENGTH, nullable: true)]
     #[Assert\Length(max: self::CAPTION_MAX_LENGTH)]
     private ?string $caption = null;
 
-    #[ORM\Column(type: 'string', length: self::COPYRIGHT_MAX_LENGTH, nullable: true)]
+    #[ORM\Column(type: Types::STRING, length: self::COPYRIGHT_MAX_LENGTH, nullable: true)]
     #[Assert\Length(max: self::COPYRIGHT_MAX_LENGTH)]
     private ?string $copyright = null;
 
@@ -59,10 +60,10 @@ class MediaMetadata
     #[Assert\Valid]
     private Collection $tags;
 
-    #[ORM\Column(type: 'datetime_immutable')]
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
-    #[ORM\Column(type: 'datetime_immutable')]
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $updatedAt;
 
     public function __construct(string $library, string $path)
@@ -80,7 +81,8 @@ class MediaMetadata
         $this->library = $library;
         $this->path = $path;
         $this->tags = new ArrayCollection();
-        $this->createdAt = $this->updatedAt = new \DateTimeImmutable();
+        $this->createdAt = new \DateTimeImmutable();
+        $this->updatedAt = $this->createdAt;
     }
 
     public function getId(): ?int

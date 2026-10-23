@@ -44,6 +44,7 @@ class MediaMetadataPersistenceTest extends KernelTestCase
 
         $metadata = $this->reload();
         $metadata->setTags(['mango', 'zebra', 'kiwi']);
+
         $this->em->flush();
 
         $metadata = $this->reload();
@@ -58,6 +59,7 @@ class MediaMetadataPersistenceTest extends KernelTestCase
 
         $metadata = $this->reload();
         $metadata->setTags(['sport']);
+
         $this->em->flush();
 
         $metadata = $this->reload();
@@ -77,8 +79,10 @@ class MediaMetadataPersistenceTest extends KernelTestCase
     {
         $metadata = new MediaMetadata('default', 'persistence-test/' . uniqid() . '.png');
         $metadata->setTags($tags);
+
         $this->em->persist($metadata);
         $this->em->flush();
+
         $this->id = $metadata->getId();
 
         return $metadata;

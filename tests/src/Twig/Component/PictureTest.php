@@ -384,6 +384,7 @@ class PictureTest extends WebTestCase
         $manager = static::getContainer()->get('joli_media.metadata.manager');
         $metadata = new MediaMetadata('default', self::COMPLETELY_STORED_MEDIA);
         $metadata->setAlt($alt);
+
         $manager->save($metadata);
     }
 }

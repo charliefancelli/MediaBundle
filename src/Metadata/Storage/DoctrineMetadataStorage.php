@@ -75,7 +75,7 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
                 // detached (e.g. by a move or a delete): ORM would insert it again, so update the managed row instead
                 $managed = $this->get($metadata->getLibrary(), $metadata->getPath());
 
-                if (null !== $managed) {
+                if ($managed instanceof MediaMetadata) {
                     $managed->setAlt($metadata->getAlt());
                     $managed->setCaption($metadata->getCaption());
                     $managed->setCopyright($metadata->getCopyright());

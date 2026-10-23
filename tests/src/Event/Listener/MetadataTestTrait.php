@@ -35,6 +35,7 @@ trait MetadataTestTrait
     {
         $metadata = new MediaMetadata($library, $path);
         $metadata->setAlt('Alt of ' . $path);
+
         $this->metadataStorage->save($metadata);
     }
 

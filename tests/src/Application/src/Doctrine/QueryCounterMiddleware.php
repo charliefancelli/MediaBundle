@@ -33,7 +33,7 @@ class QueryCounterMiddleware implements Middleware
         };
 
         return new class($driver, $record) extends AbstractDriverMiddleware {
-            public function __construct(Driver $driver, private \Closure $record)
+            public function __construct(Driver $driver, private readonly \Closure $record)
             {
                 parent::__construct($driver);
             }
@@ -46,7 +46,7 @@ class QueryCounterMiddleware implements Middleware
                 $record = $this->record;
 
                 return new class(parent::connect($params), $record) extends AbstractConnectionMiddleware {
-                    public function __construct(Connection $connection, private \Closure $record)
+                    public function __construct(Connection $connection, private readonly \Closure $record)
                     {
                         parent::__construct($connection);
                     }
@@ -57,7 +57,7 @@ class QueryCounterMiddleware implements Middleware
                         $record = $this->record;
 
                         return new class(parent::prepare($sql), $record, $sql) extends AbstractStatementMiddleware {
-                            public function __construct(Statement $statement, private \Closure $record, private string $sql)
+                            public function __construct(Statement $statement, private readonly \Closure $record, private readonly string $sql)
                             {
                                 parent::__construct($statement);
                             }

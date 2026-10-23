@@ -72,7 +72,7 @@ class Img
             unset($data['alt']);
         }
 
-        if (\array_key_exists('alt', $data) || null === $this->metadataProvider) {
+        if (\array_key_exists('alt', $data) || !$this->metadataProvider instanceof MetadataProvider) {
             return $data;
         }
 

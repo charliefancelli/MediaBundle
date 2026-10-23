@@ -85,6 +85,7 @@ class MetadataProviderTest extends BaseTestCase
     {
         $this->storage->put('default', 'a.png', 'A');
         $this->storage->put('default', 'b.png', 'B');
+
         $this->provider->getMany(['a.png', 'b.png']);
 
         $this->provider->forget('default', './a.png');

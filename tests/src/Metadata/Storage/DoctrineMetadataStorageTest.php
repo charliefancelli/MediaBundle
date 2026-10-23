@@ -50,6 +50,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $metadata = new MediaMetadata('default', 'a.png');
         $metadata->setAlt('An alt');
         $metadata->setTags(['one', 'two']);
+
         $this->storage->save($metadata);
 
         $this->entityManager->clear();
@@ -263,6 +264,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
 
         $detached->setAlt('Changed');
         $detached->setTags(['two']);
+
         $this->storage->save($detached);
 
         $this->entityManager->clear();
@@ -379,7 +381,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $tags = $this->storage->listTags('default');
         $this->assertSame('summer', $tags[0]);
         $this->assertContains('city', $tags);
-        $this->assertContains('beach', array_map('strtolower', $tags));
+        $this->assertContains('beach', array_map(strtolower(...), $tags));
         $this->assertSame('summer', $this->storage->listTags('default', 1)[0]);
         $this->assertCount(2, $this->storage->listTags('default', 2));
         $this->assertSame(['other'], $this->storage->listTags('auto_generate'));
@@ -401,6 +403,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $metadata = new MediaMetadata($library, $path);
         $metadata->setAlt($alt);
         $metadata->setTags($tags);
+
         $this->storage->save($metadata);
 
         return $metadata;

@@ -655,7 +655,7 @@ class MediaAdminController extends AbstractController
 
         // fall back to the first tab when the requested one is not rendered
         $displayedTab = (int) $displayedTab;
-        $hasVariationsTab = $this->config->isVisible('show_variations_list') && \count($media->getVariations()) > 0;
+        $hasVariationsTab = $this->config->isVisible('show_variations_list') && [] !== $media->getVariations();
         if ((2 === $displayedTab && !$hasVariationsTab) || (3 === $displayedTab && !$metadataEnabled) || $displayedTab < 1 || $displayedTab > 3) {
             $displayedTab = 1;
         }

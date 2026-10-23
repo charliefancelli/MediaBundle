@@ -292,6 +292,7 @@ class MediaTest extends BaseTestCase
         $manager = $container->get('joli_media.metadata.manager');
         $metadata = new MediaMetadata('default', 'media-test-metadata.jpg');
         $metadata->setAlt('Stored alt');
+
         $manager->save($metadata);
 
         try {

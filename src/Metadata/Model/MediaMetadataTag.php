@@ -2,6 +2,7 @@
 
 namespace JoliCode\MediaBundle\Metadata\Model;
 
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -12,28 +13,22 @@ class MediaMetadataTag
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
-    #[ORM\Column(type: 'integer')]
+    #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null; // @phpstan-ignore property.unusedType (set by Doctrine)
 
-    #[ORM\ManyToOne(targetEntity: MediaMetadata::class, inversedBy: 'tags')]
-    #[ORM\JoinColumn(name: 'metadata_id', nullable: false, onDelete: 'CASCADE')]
-    private MediaMetadata $metadata;
-
-    #[ORM\Column(type: 'string', length: MediaMetadata::TAG_MAX_LENGTH)]
-    #[Assert\Length(max: MediaMetadata::TAG_MAX_LENGTH)]
-    private string $name;
-
-    /**
-     * Position of the tag in the list, to keep the order in which the tags were entered.
-     */
-    #[ORM\Column(type: 'integer')]
-    private int $position;
-
-    public function __construct(MediaMetadata $metadata, string $name, int $position)
-    {
-        $this->metadata = $metadata;
-        $this->name = $name;
-        $this->position = $position;
+    public function __construct(
+        #[ORM\ManyToOne(targetEntity: MediaMetadata::class, inversedBy: 'tags')]
+        #[ORM\JoinColumn(name: 'metadata_id', nullable: false, onDelete: 'CASCADE')]
+        private MediaMetadata $metadata,
+        #[ORM\Column(type: Types::STRING, length: MediaMetadata::TAG_MAX_LENGTH)]
+        #[Assert\Length(max: MediaMetadata::TAG_MAX_LENGTH)]
+        private string $name,
+        /**
+         * Position of the tag in the list, to keep the order in which the tags were entered.
+         */
+        #[ORM\Column(type: Types::INTEGER)]
+        private int $position,
+    ) {
     }
 
     public function getId(): ?int

@@ -86,6 +86,7 @@ class MediaAdminControllerTest extends WebTestCase
         foreach (['alt', 'caption', 'copyright', 'tags'] as $field) {
             $this->assertCount(1, $crawler->filter(\sprintf('#tab-metadata [name="metadata[%s]"]', $field)), $field);
         }
+
         $this->assertSelectorExists('#tab-metadata input[name="metadata[tags]"][list="joli-media-tags"]');
         $this->assertSelectorExists('datalist#joli-media-tags');
     }
@@ -231,6 +232,7 @@ class MediaAdminControllerTest extends WebTestCase
             $this->service('security.authorization_checker', AuthorizationCheckerInterface::class),
         );
         $disabled->setContainer($this->service('service_container', ContainerInterface::class));
+
         $container->set('joli_media_easy_admin.controller.admin', $disabled);
 
         $this->client->request(Request::METHOD_POST, '/admin/media/show/' . self::METADATA_PATH, [
@@ -321,6 +323,7 @@ class MediaAdminControllerTest extends WebTestCase
         $this->saveMetadata('Alt', '', '', ['sport']);
         $other = new MediaMetadata('default', self::OTHER_PATH);
         $other->setTags(['sport', 'other']);
+
         $storage = $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class);
         $storage->save($other);
 
@@ -372,6 +375,7 @@ class MediaAdminControllerTest extends WebTestCase
         $this->saveMetadata('Alt', '', '', ['stale-test']);
         $gone = new MediaMetadata('default', 'sub/folder/gone.png');
         $gone->setTags(['stale-test']);
+
         $storage = $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class);
         $storage->save($gone);
 
@@ -419,7 +423,7 @@ class MediaAdminControllerTest extends WebTestCase
 
         // submitting the form searches inside the tagged medias
         $form = $crawler->filter('form[data-component="media-search"]')->form(['query' => 'circle']);
-        $crawler = $this->client->submit($form);
+        $this->client->submit($form);
         $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
         $this->assertStringContainsString('tag=sport', $this->client->getRequest()->getUri());
 
@@ -906,6 +910,7 @@ class MediaAdminControllerTest extends WebTestCase
             $fields,
         );
         $controller->setContainer($this->service('service_container', ContainerInterface::class));
+
         $container->set('joli_media_easy_admin.controller.admin', $controller);
     }
 

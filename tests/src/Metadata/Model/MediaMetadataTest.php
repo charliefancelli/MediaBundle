@@ -30,6 +30,7 @@ class MediaMetadataTest extends TestCase
     {
         $m = new MediaMetadata('default', 'a.png');
         $m->setTags(['a', 'b', 'c']);
+
         $kept = $this->tagEntities($m)[1];
 
         $m->setTags(['c', 'b', 'd']);
@@ -42,6 +43,7 @@ class MediaMetadataTest extends TestCase
     {
         $m = new MediaMetadata('default', 'a.png');
         $m->setTags(['Sport']);
+
         $tag = $this->tagEntities($m)[0];
 
         $m->setTags(['sport']);

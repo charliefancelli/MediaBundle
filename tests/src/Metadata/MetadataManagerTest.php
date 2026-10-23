@@ -45,6 +45,7 @@ class MetadataManagerTest extends BaseTestCase
 
         $metadata = new MediaMetadata('default', 'a.png');
         $metadata->setAlt('An alt');
+
         $this->manager->save($metadata);
 
         self::assertNotNull($this->provider->get('a.png'));
@@ -73,6 +74,7 @@ class MetadataManagerTest extends BaseTestCase
 
         $metadata = new MediaMetadata('default', 'a.png');
         $metadata->setAlt('An alt');
+
         $manager->save($metadata);
 
         self::assertSame('An alt', $this->provider->get('a.png')?->getAlt());

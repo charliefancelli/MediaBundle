@@ -36,6 +36,7 @@ class DeleteFolderEventListenerTest extends WebTestCase
         /** @var EntityManagerInterface */
         $entityManager = $container->get(EntityManagerInterface::class);
         $this->entityManager = $entityManager;
+
         $this->articleRepository = $entityManager->getRepository(Article::class);
         $this->pageRepository = $entityManager->getRepository(Page::class);
 
@@ -192,8 +193,8 @@ class DeleteFolderEventListenerTest extends WebTestCase
         try {
             $this->originalStorage->deleteDirectory('sub/folder/deep');
             $this->fail('The deletion should have failed.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The metadata storage is down.', $runtimeException->getMessage());
         }
 
         $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));

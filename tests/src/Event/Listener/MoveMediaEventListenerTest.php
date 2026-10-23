@@ -180,8 +180,8 @@ class MoveMediaEventListenerTest extends WebTestCase
         try {
             $this->originalStorage->move('sub/folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
             $this->fail('The move should have failed.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The metadata storage is down.', $runtimeException->getMessage());
         }
 
         $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));

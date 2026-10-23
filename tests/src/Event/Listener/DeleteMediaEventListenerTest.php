@@ -148,8 +148,8 @@ class DeleteMediaEventListenerTest extends WebTestCase
         try {
             $this->originalStorage->delete('set_null.pdf');
             $this->fail('The deletion should have failed.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The metadata storage is down.', $runtimeException->getMessage());
         }
 
         $this->assertTrue($this->originalStorage->has('set_null.pdf'));

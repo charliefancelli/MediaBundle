@@ -2,12 +2,14 @@
 
 namespace JoliCode\MediaBundle\Tests\DependencyInjection;
 
+use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
 use JoliCode\MediaBundle\Event\MediaEvents;
 use JoliCode\MediaBundle\JoliMediaBundle;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 class MetadataDisabledTest extends TestCase
@@ -41,6 +43,7 @@ class MetadataDisabledTest extends TestCase
 
         $bundle = new JoliMediaBundle();
         $bundle->build($container);
+
         $container->compile();
     }
 
@@ -66,7 +69,7 @@ class MetadataDisabledTest extends TestCase
 
     public function testTheFollowListenerIsRemovedWhenDoctrineBundleIsPresent(): void
     {
-        $container = $this->createContainer(['enabled' => true, 'storage' => 'app.metadata_storage'], ['DoctrineBundle' => 'Doctrine\Bundle\DoctrineBundle\DoctrineBundle']);
+        $container = $this->createContainer(['enabled' => true, 'storage' => 'app.metadata_storage'], ['DoctrineBundle' => DoctrineBundle::class]);
 
         $this->assertTrue($container->hasDefinition('joli_media.metadata.event_listener.follow'));
 
@@ -114,7 +117,7 @@ class MetadataDisabledTest extends TestCase
 
         $bundle = new JoliMediaBundle();
         $extension = $bundle->getContainerExtension();
-        \assert(null !== $extension);
+        \assert($extension instanceof ExtensionInterface);
         $extension->load([[
             'libraries' => [
                 'default' => [
