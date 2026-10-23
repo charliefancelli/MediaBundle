@@ -2,17 +2,22 @@
 
 namespace JoliCode\MediaBundle\Tests\Event\Listener;
 
+use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Exception\PathAlreadyExistsException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Metadata\FailingMetadataStorage;
 use League\Flysystem\UnableToMoveFile;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -30,6 +35,10 @@ class MoveFolderEventListenerTest extends WebTestCase
     private EntityRepository $pageRepository;
 
     private OriginalStorage $originalStorage;
+
+    private MetadataStorageInterface $metadataStorage;
+
+    private Registry $registry;
 
     private EntityManagerInterface $entityManager;
 
@@ -50,6 +59,12 @@ class MoveFolderEventListenerTest extends WebTestCase
         /** @var LibraryContainer $libraries */
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
+
+        // not the container's service: tests replace it to make it fail
+        /** @var Registry $registry */
+        $registry = $container->get('doctrine');
+        $this->registry = $registry;
+        $this->metadataStorage = new DoctrineMetadataStorage($registry);
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -240,8 +255,64 @@ class MoveFolderEventListenerTest extends WebTestCase
         }
     }
 
+    public function testMetadataFollowsTheFolder(): void
+    {
+        $this->seed('default', 'sub/folder/circle-pattern.png');
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->seed('default', 'sub/folder-2/x.png');
+        $this->seed('default', 'moved/stale.png'); // left behind by a file deleted outside of JoliMedia
+        $this->seed('auto_generate', 'sub/folder/deep/test.txt');
+
+        $this->originalStorage->moveFolder('/sub//folder/', 'moved');
+
+        $this->assertSame('Alt of sub/folder/circle-pattern.png', $this->altOf('default', 'moved/circle-pattern.png'));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'moved/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/circle-pattern.png'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'moved/stale.png'));
+        $this->assertSame('Alt of sub/folder-2/x.png', $this->altOf('default', 'sub/folder-2/x.png'));
+        // the same path in another library is another media
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('auto_generate', 'sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('auto_generate', 'moved/deep/test.txt'));
+    }
+
+    public function testMetadataStaysWhenTheFolderMoveFails(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->entityManager->clear();
+
+        static::getContainer()->set('joli_media.metadata.storage.doctrine', new FailingMetadataStorage($this->registry));
+
+        try {
+            $this->originalStorage->moveFolder('sub/folder', 'moved');
+            $this->fail('The move should have failed.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        }
+
+        $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));
+        $this->assertFalse($this->originalStorage->hasDirectory('moved'));
+
+        $this->entityManager->clear();
+        $this->assertCount(1, $this->pageRepository->findBy(['mediaDefault' => 'sub/folder/deep/test.txt']));
+        $this->assertCount(0, $this->pageRepository->findBy(['mediaDefault' => 'moved/deep/test.txt']));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    private function seed(string $library, string $path): void
+    {
+        $metadata = new MediaMetadata($library, $path);
+        $metadata->setAlt('Alt of ' . $path);
+        $this->metadataStorage->save($metadata);
+    }
+
+    private function altOf(string $library, string $path): ?string
+    {
+        return $this->metadataStorage->get($library, $path)?->getAlt();
     }
 }

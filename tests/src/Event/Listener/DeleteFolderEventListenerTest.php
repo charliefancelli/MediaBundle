@@ -2,14 +2,19 @@
 
 namespace JoliCode\MediaBundle\Tests\Event\Listener;
 
+use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Metadata\FailingMetadataStorage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -17,11 +22,17 @@ use Symfony\Component\Console\Input\StringInput;
 
 class DeleteFolderEventListenerTest extends WebTestCase
 {
+    private EntityManagerInterface $entityManager;
+
     private EntityRepository $articleRepository;
 
     private EntityRepository $pageRepository;
 
     private OriginalStorage $originalStorage;
+
+    private MetadataStorageInterface $metadataStorage;
+
+    private Registry $registry;
 
     protected function setUp(): void
     {
@@ -30,12 +41,19 @@ class DeleteFolderEventListenerTest extends WebTestCase
 
         /** @var EntityManagerInterface */
         $entityManager = $container->get(EntityManagerInterface::class);
+        $this->entityManager = $entityManager;
         $this->articleRepository = $entityManager->getRepository(Article::class);
         $this->pageRepository = $entityManager->getRepository(Page::class);
 
         /** @var LibraryContainer */
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
+
+        // not the container's service: tests replace it to make it fail
+        /** @var Registry $registry */
+        $registry = $container->get('doctrine');
+        $this->registry = $registry;
+        $this->metadataStorage = new DoctrineMetadataStorage($registry);
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -132,8 +150,82 @@ class DeleteFolderEventListenerTest extends WebTestCase
         yield 'consecutive_slashes_with_leading_and_trailing' => ['/sub//folder/'];
     }
 
+    public function testMetadataIsDeletedWithTheFolder(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+        $this->seed('default', 'sub/folder/deep/nested/a.png');
+        $this->seed('default', 'sub/folder/circle-pattern.png');
+        $this->seed('default', 'sub/folder/deeper/b.png');
+        $this->seed('auto_generate', 'sub/folder/deep/test.txt');
+
+        $this->originalStorage->deleteDirectory('/sub//folder/deep/');
+
+        $this->assertFalse($this->originalStorage->has('sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/test.txt'));
+        $this->assertNull($this->altOf('default', 'sub/folder/deep/nested/a.png'));
+        // neither the parent folder nor a sibling sharing the prefix are affected
+        $this->assertSame('Alt of sub/folder/circle-pattern.png', $this->altOf('default', 'sub/folder/circle-pattern.png'));
+        $this->assertSame('Alt of sub/folder/deeper/b.png', $this->altOf('default', 'sub/folder/deeper/b.png'));
+        // the same path in another library is another media
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('auto_generate', 'sub/folder/deep/test.txt'));
+
+        // no row is left under the path of the trash either
+        $this->entityManager->clear();
+        $trashed = array_filter(
+            $this->entityManager->getRepository(MediaMetadata::class)->findAll(),
+            static fn (MediaMetadata $metadata): bool => str_contains($metadata->getPath(), 'deep/test.txt') && 'default' === $metadata->getLibrary(),
+        );
+        $this->assertSame([], $trashed);
+    }
+
+    public function testMetadataStaysWhenTheFolderDeletionIsRestricted(): void
+    {
+        $this->seed('default', 'sub/folder/circle-pattern.png');
+        $this->seed('default', 'sub/folder/deep/test.txt');
+
+        try {
+            $this->originalStorage->deleteDirectory('sub/folder');
+            $this->fail('The deletion should have been refused.');
+        } catch (MediaInUseException) {
+        }
+
+        $this->assertSame('Alt of sub/folder/circle-pattern.png', $this->altOf('default', 'sub/folder/circle-pattern.png'));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
+    public function testMetadataStaysWhenTheFolderDeletionFails(): void
+    {
+        $this->seed('default', 'sub/folder/deep/test.txt');
+
+        static::getContainer()->set('joli_media.metadata.storage.doctrine', new FailingMetadataStorage($this->registry));
+
+        try {
+            $this->originalStorage->deleteDirectory('sub/folder/deep');
+            $this->fail('The deletion should have failed.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        }
+
+        $this->assertTrue($this->originalStorage->has('sub/folder/deep/test.txt'));
+        // the SET_NULL column update has been rolled back
+        $this->assertSame(1, $this->pageRepository->count(['mediaSetNull' => 'sub/folder/deep/test.txt']));
+        $this->assertSame('Alt of sub/folder/deep/test.txt', $this->altOf('default', 'sub/folder/deep/test.txt'));
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    private function seed(string $library, string $path): void
+    {
+        $metadata = new MediaMetadata($library, $path);
+        $metadata->setAlt('Alt of ' . $path);
+        $this->metadataStorage->save($metadata);
+    }
+
+    private function altOf(string $library, string $path): ?string
+    {
+        return $this->metadataStorage->get($library, $path)?->getAlt();
     }
 }

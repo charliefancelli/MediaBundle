@@ -2,14 +2,20 @@
 
 namespace JoliCode\MediaBundle\Tests\Event\Listener;
 
+use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Metadata\FailingMetadataStorage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,6 +28,10 @@ class DeleteMediaEventListenerTest extends WebTestCase
     private EntityRepository $pageRepository;
 
     private OriginalStorage $originalStorage;
+
+    private MetadataStorageInterface $metadataStorage;
+
+    private Registry $registry;
 
     protected function setUp(): void
     {
@@ -36,6 +46,12 @@ class DeleteMediaEventListenerTest extends WebTestCase
         /** @var LibraryContainer */
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
+
+        // not the container's service: tests replace it to make it fail
+        /** @var Registry $registry */
+        $registry = $container->get('doctrine');
+        $this->registry = $registry;
+        $this->metadataStorage = new DoctrineMetadataStorage($registry);
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -107,8 +123,78 @@ class DeleteMediaEventListenerTest extends WebTestCase
         yield 'consecutive_slashes_with_leading_and_trailing' => ['/sub//folder/'];
     }
 
+    public function testMetadataIsDeletedWithTheMedia(): void
+    {
+        $this->seed('default', 'not_used/default.pdf');
+        $this->seed('auto_generate', 'not_used/default.pdf');
+
+        $this->originalStorage->delete('/not_used//default.pdf');
+
+        $this->assertFalse($this->originalStorage->has('not_used/default.pdf'));
+        $this->assertNull($this->altOf('default', 'not_used/default.pdf'));
+        // the same path in another library is another media
+        $this->assertSame('Alt of not_used/default.pdf', $this->altOf('auto_generate', 'not_used/default.pdf'));
+    }
+
+    public function testMetadataStaysWhenTheDeletionIsRestricted(): void
+    {
+        $this->seed('default', 'restrict.pdf');
+
+        try {
+            $this->originalStorage->delete('restrict.pdf');
+            $this->fail('The deletion should have been refused.');
+        } catch (MediaInUseException) {
+        }
+
+        $this->assertTrue($this->originalStorage->has('restrict.pdf'));
+        $this->assertSame('Alt of restrict.pdf', $this->altOf('default', 'restrict.pdf'));
+    }
+
+    public function testMetadataStaysWhenTheDeletionFails(): void
+    {
+        $this->seed('default', 'set_null.pdf');
+
+        static::getContainer()->set('joli_media.metadata.storage.doctrine', new FailingMetadataStorage($this->registry));
+
+        try {
+            $this->originalStorage->delete('set_null.pdf');
+            $this->fail('The deletion should have failed.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('The metadata storage is down.', $exception->getMessage());
+        }
+
+        $this->assertTrue($this->originalStorage->has('set_null.pdf'));
+        // the SET_NULL column update has been rolled back
+        $this->assertSame(1, $this->pageRepository->count(['mediaSetNull' => 'set_null.pdf']));
+        $this->assertSame('Alt of set_null.pdf', $this->altOf('default', 'set_null.pdf'));
+    }
+
+    public function testTheProviderDoesNotServeStaleMetadataAfterADeletion(): void
+    {
+        $this->seed('default', 'not_used/default.pdf');
+        /** @var MetadataProvider $provider */
+        $provider = static::getContainer()->get('joli_media.metadata.provider');
+        $this->assertSame('Alt of not_used/default.pdf', $provider->get('not_used/default.pdf')?->getAlt());
+
+        $this->originalStorage->delete('not_used/default.pdf');
+
+        $this->assertNull($provider->get('not_used/default.pdf'));
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    private function seed(string $library, string $path): void
+    {
+        $metadata = new MediaMetadata($library, $path);
+        $metadata->setAlt('Alt of ' . $path);
+        $this->metadataStorage->save($metadata);
+    }
+
+    private function altOf(string $library, string $path): ?string
+    {
+        return $this->metadataStorage->get($library, $path)?->getAlt();
     }
 }

@@ -11,6 +11,7 @@ use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Event\PostDeleteFolderEvent;
 use JoliCode\MediaBundle\Event\PreDeleteFolderEvent;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 
 readonly class DeleteFolderEventListener
@@ -18,6 +19,7 @@ readonly class DeleteFolderEventListener
     public function __construct(
         private Registry $managerRegistry,
         private CacheInterface $cache,
+        private ?MetadataStorageInterface $metadataStorage = null,
     ) {
     }
 
@@ -93,6 +95,8 @@ readonly class DeleteFolderEventListener
                     }
                 }
             }
+
+            $this->metadataStorage?->deleteFolder($event->originalStorage->getLibrary()->getName(), $event->path);
 
             // Commit the transaction if all operations were successful
             foreach ($objectManagers as $objectManager) {

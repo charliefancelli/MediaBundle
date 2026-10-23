@@ -10,6 +10,7 @@ use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Event\PostDeleteMediaEvent;
 use JoliCode\MediaBundle\Event\PreDeleteMediaEvent;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 
 readonly class DeleteMediaEventListener
@@ -17,6 +18,7 @@ readonly class DeleteMediaEventListener
     public function __construct(
         private Registry $managerRegistry,
         private CacheInterface $cache,
+        private ?MetadataStorageInterface $metadataStorage = null,
     ) {
     }
 
@@ -85,6 +87,8 @@ readonly class DeleteMediaEventListener
                     }
                 }
             }
+
+            $this->metadataStorage?->delete($event->originalStorage->getLibrary()->getName(), $event->path);
 
             // Commit the transaction if all operations were successful
             foreach ($objectManagers as $objectManager) {
