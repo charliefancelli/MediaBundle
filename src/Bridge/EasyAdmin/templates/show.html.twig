@@ -142,7 +142,8 @@
 {% block main %}
     {% set has_variations_tab = config.isVisible('show_variations_list') and media.variations|length > 0 %}
     {% set has_metadata_tab = metadata_enabled|default(false) %}
-    {% if has_variations_tab or has_metadata_tab %}
+    {% set has_usages_tab = usages is defined and usages is not null %}
+    {% if has_variations_tab or has_metadata_tab or has_usages_tab %}
         <div class="nav-tabs-custom form-tabs-tablist">
             <ul class="nav nav-tabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -170,6 +171,16 @@
                             <i class="fa fa-tags"></i>
                         </span>
                         {{ 'media.metadata.tab'|trans }}
+                    </a>
+                </li>
+                {% endif %}
+                {% if has_usages_tab %}
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link{% if displayed_tab == 4 %} active{% endif %}" href="#tab-usages" id="tablist-tab-usages" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
+                        <span class="icon tab-nav-item-icon">
+                            <i class="fa fa-link"></i>
+                        </span>
+                        {{ 'usage.label_plural'|trans }}{% if usages|length > 0 %} ({{ usages|length }}{% if usages_truncated|default(false) %}+{% endif %}){% endif %}
                     </a>
                 </li>
                 {% endif %}
@@ -267,6 +278,46 @@
                     <div class="row">
                         {{ block('media_metadata') }}
                     </div>
+                </div>
+                {% endif %}
+                {% if has_usages_tab %}
+                <div id="tab-usages" class="tab-pane{% if displayed_tab == 4 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-usages">
+                    {% if usages|length == 0 %}
+                        <p class="text-muted usages-empty">{{ 'usage.none'|trans }}</p>
+                    {% else %}
+                        <table class="table table-bordered table-striped table-hover usages-list">
+                            <thead>
+                                <tr>
+                                    <th data-column="label" class="text-left" dir="ltr">{{ 'usage.label'|trans }}</th>
+                                    <th data-column="field" class="text-left" dir="ltr">{{ 'usage.field'|trans }}</th>
+                                    <th data-column="actions" class="text-left" dir="ltr">{{ 'action.entity_actions'|trans(domain: 'EasyAdminBundle') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for usage in usages %}
+                                    <tr class="usage">
+                                        <td data-column="label" class="text-left" dir="ltr">
+                                            {{ usage.label }}
+                                            {% if usage.blocksDeletion %}
+                                                <span class="badge badge-danger">{{ 'usage.blocks_deletion'|trans }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td data-column="field" class="text-left" dir="ltr">
+                                            {% if usage.field %}<code>{{ usage.field }}</code>{% endif %}
+                                        </td>
+                                        <td data-column="actions" class="text-left" dir="ltr">
+                                            {% if usage.editUrl %}
+                                                <a href="{{ usage.editUrl }}" class="usage-edit-link">{{ 'usage.edit'|trans }}</a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% if usages_truncated|default(false) %}
+                            <p class="text-muted usages-truncated">{{ 'usage.truncated'|trans({ '%count%': usages|length }) }}</p>
+                        {% endif %}
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

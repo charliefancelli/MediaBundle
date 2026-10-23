@@ -58,6 +58,9 @@ use JoliCode\MediaBundle\Twig\Components\Img;
 use JoliCode\MediaBundle\Twig\Components\Picture;
 use JoliCode\MediaBundle\Twig\Components\Source;
 use JoliCode\MediaBundle\Twig\JoliMediaExtension;
+use JoliCode\MediaBundle\Usage\EventListener\UsageDeleteGuardListener;
+use JoliCode\MediaBundle\Usage\MediaUsageFinder;
+use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
 use JoliCode\MediaBundle\Validator\MediaValidator;
 use JoliCode\MediaBundle\Variation\Variation;
 use JoliCode\MediaBundle\Variation\VariationContainer;
@@ -223,6 +226,36 @@ return static function (ContainerConfigurator $container): void {
         ->tag('kernel.event_listener', [
             'event' => MediaEvents::POST_MOVE_MEDIA,
             'method' => 'onMediaPostMove',
+        ])
+
+        // usages
+        ->set('joli_media.usage_finder', MediaUsageFinder::class)
+        // public: fetched from the container by applications and tests, nothing injects it yet
+        ->public()
+        ->args([
+            service('doctrine')->nullOnInvalid(),
+            service(CacheInterface::class),
+            service('joli_media.library_container'),
+            tagged_iterator('joli_media.media_usage_provider'),
+            // aliased by the admin bridges able to link a usage to its edit page
+            service(MediaUsageUrlGeneratorInterface::class)->nullOnInvalid(),
+        ])
+        ->alias(MediaUsageFinder::class, 'joli_media.usage_finder')
+        // not removed by DoctrinePass: it works without DoctrineBundle.
+        // Priority below the Doctrine delete listeners (0), so that the RESTRICT columns are reported first.
+        ->set('joli_media.event_listener.usage_delete_guard', UsageDeleteGuardListener::class)
+        ->args([
+            tagged_iterator('joli_media.media_usage_provider'),
+        ])
+        ->tag('kernel.event_listener', [
+            'event' => MediaEvents::PRE_DELETE_MEDIA,
+            'method' => 'onMediaPreDelete',
+            'priority' => -16,
+        ])
+        ->tag('kernel.event_listener', [
+            'event' => MediaEvents::PRE_DELETE_FOLDER,
+            'method' => 'onFolderPreDelete',
+            'priority' => -16,
         ])
 
         // library

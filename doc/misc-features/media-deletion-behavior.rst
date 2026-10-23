@@ -63,3 +63,5 @@ If a media object cannot be deleted due to the ``RESTRICT`` behavior, a ``MediaI
     }
 
 When using the EasyAdmin or the SonataAdmin bridges, the exception will be automatically handled and a user-friendly message will be displayed in the admin interface.
+
+Columns are not the only places where a media can be used: to prevent the deletion of a media referenced elsewhere (a JSON field, a CMS block...), and to list where a media is used, see `Finding Where a Media Is Used <media-usages.rst>`_.

@@ -7,6 +7,7 @@ Misc features
 - `Using in Doctrine Entities <using-in-doctrine-entities.rst>`_
 - `Media Deletion Behavior <media-deletion-behavior.rst>`_
 - `Media Metadata <metadata.rst>`_
+- `Media Usages <media-usages.rst>`_
 - `Srcset Generation <srcset.rst>`_
 - `Twig Components <twig-components.rst>`_
 - `URL Generation <url-generation.rst>`_

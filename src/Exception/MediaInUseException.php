@@ -17,6 +17,9 @@ class MediaInUseException extends \RuntimeException
         return $this->path;
     }
 
+    /**
+     * The entity class, or the label of the usage when a provider reported one without entity class.
+     */
     public function getEntityName(): string
     {
         return $this->entityName;
@@ -29,6 +32,14 @@ class MediaInUseException extends \RuntimeException
 
     private function format(): string
     {
+        if ('' === $this->propertyName) {
+            return \sprintf(
+                'The media "%s" is used by "%s". It cannot be deleted.',
+                $this->path,
+                $this->entityName,
+            );
+        }
+
         return \sprintf(
             'The media "%s" is used in the "%s" field of the "%s" entity. It cannot be deleted.',
             $this->path,

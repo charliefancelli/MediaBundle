@@ -31,6 +31,8 @@ use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Resolver\Resolver;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
+use JoliCode\MediaBundle\Usage\MediaUsage;
+use JoliCode\MediaBundle\Usage\MediaUsageFinder;
 use League\Flysystem\PathTraversalDetected;
 use League\Flysystem\UnableToListContents;
 use League\Flysystem\UnableToWriteFile;
@@ -61,6 +63,16 @@ class MediaAdminController extends AbstractController
      */
     public const PATH_PREFIX_PLACEHOLDER = '__joli_media_path_prefix__';
 
+    /**
+     * The number of the "Usages" tab of the media page (the "Metadata" tab being the third one).
+     */
+    public const USAGES_TAB = 4;
+
+    /**
+     * The number of usages listed on the page of a media and in the message of a refused deletion.
+     */
+    public const USAGES_LIMIT = 50;
+
     public function __construct(
         private readonly LibraryContainer $libraries,
         private readonly Config $config,
@@ -79,6 +91,7 @@ class MediaAdminController extends AbstractController
         /** @var list<string> */
         private readonly array $metadataFields = [],
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?MediaUsageFinder $usageFinder = null,
     ) {
     }
 
@@ -193,22 +206,11 @@ class MediaAdminController extends AbstractController
                     ['key' => ''],
                 ));
             } catch (MediaInUseException $e) {
-                $this->addFlash(
-                    'danger',
-                    $this->translator->trans(
-                        'media.error.in_use',
-                        [
-                            '%media%' => $e->getPath(),
-                            '%field%' => $e->getPropertyName(),
-                            '%entity%' => $e->getEntityName(),
-                        ],
-                        'JoliMediaEasyAdminBundle'
-                    )
-                );
+                $this->addFlash('danger', $this->createInUseMessage($e));
 
                 return $this->redirect($this->mediaAdminRouter->generateUrl(
                     'show',
-                    ['key' => $key],
+                    ['key' => $key] + ($this->usageFinder instanceof MediaUsageFinder ? ['_tab' => self::USAGES_TAB] : []),
                 ));
             }
 
@@ -263,18 +265,7 @@ class MediaAdminController extends AbstractController
                     ['key' => ''],
                 ));
             } catch (MediaInUseException $e) {
-                $this->addFlash(
-                    'danger',
-                    $this->translator->trans(
-                        'media.error.in_use',
-                        [
-                            '%media%' => $e->getPath(),
-                            '%field%' => $e->getPropertyName(),
-                            '%entity%' => $e->getEntityName(),
-                        ],
-                        'JoliMediaEasyAdminBundle'
-                    )
-                );
+                $this->addFlash('danger', $this->createInUseMessage($e));
 
                 return $this->redirect($this->mediaAdminRouter->generateUrl(
                     'explore',
@@ -523,7 +514,7 @@ class MediaAdminController extends AbstractController
         $query = $request->query->all();
         // with pretty URLs, the tab is a plain query parameter; otherwise it travels
         // through the EasyAdmin "routeParams" query parameter
-        $displayedTab = $query['_tab'] ?? $query['routeParams']['_tab'] ?? 1;
+        $displayedTab = (int) ($query['_tab'] ?? $query['routeParams']['_tab'] ?? 1);
 
         $renameFileForm = $this->createRenameFileForm($key);
         $renameFileForm->handleRequest($request);
@@ -655,12 +646,16 @@ class MediaAdminController extends AbstractController
             }
         }
 
-        // fall back to the first tab when the requested one is not rendered
-        $displayedTab = (int) $displayedTab;
         $hasVariationsTab = $this->config->isVisible('show_variations_list') && [] !== $media->getVariations();
-        if ((2 === $displayedTab && !$hasVariationsTab) || (3 === $displayedTab && !$metadataEnabled) || $displayedTab < 1 || $displayedTab > 3) {
-            $displayedTab = 1;
-        }
+        $displayedTab = match (true) {
+            2 === $displayedTab && $hasVariationsTab => 2,
+            3 === $displayedTab && $metadataEnabled => 3,
+            self::USAGES_TAB === $displayedTab && $this->usageFinder instanceof MediaUsageFinder => self::USAGES_TAB,
+            default => 1,
+        };
+
+        // one more than displayed, to know whether the list is truncated
+        $usages = $this->usageFinder?->find($key, $this->getLibrary()->getName(), self::USAGES_LIMIT + 1);
 
         return new Response($this->twig->render('@JoliMediaEasyAdmin/show.html.twig', [
             'breadcrumb' => $this->generateBreadcrumb($key, 'explore'),
@@ -678,6 +673,8 @@ class MediaAdminController extends AbstractController
                 : [],
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
+            'usages' => null === $usages ? null : \array_slice($usages, 0, self::USAGES_LIMIT),
+            'usages_truncated' => null !== $usages && \count($usages) > self::USAGES_LIMIT,
         ]));
     }
 
@@ -1148,6 +1145,45 @@ class MediaAdminController extends AbstractController
         }
 
         return $breadcrumb;
+    }
+
+    /**
+     * Names where the blocking media is used when the usage finder is available (and knows
+     * about at least one usage), else describes the first usage reported by the exception.
+     */
+    private function createInUseMessage(MediaInUseException $exception): string
+    {
+        // one more than displayed, to know whether the list is truncated
+        $usages = $this->usageFinder?->find($exception->getPath(), $this->getLibrary()->getName(), self::USAGES_LIMIT + 1) ?? [];
+
+        if ([] !== $usages) {
+            $truncated = \count($usages) > self::USAGES_LIMIT;
+
+            return $this->translator->trans(
+                $truncated ? 'media.error.in_use_with_many_usages' : 'media.error.in_use_with_usages',
+                [
+                    '%media%' => htmlspecialchars($exception->getPath()),
+                    '%count%' => $truncated ? self::USAGES_LIMIT : \count($usages),
+                    // EasyAdmin renders the flash messages as raw HTML
+                    '%usages%' => implode(', ', array_map(
+                        static fn (MediaUsage $usage): string => htmlspecialchars($usage->label),
+                        \array_slice($usages, 0, self::USAGES_LIMIT),
+                    )),
+                ],
+                'JoliMediaEasyAdminBundle'
+            );
+        }
+
+        return $this->translator->trans(
+            '' === $exception->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
+            [
+                // EasyAdmin renders the flash messages as raw HTML
+                '%media%' => htmlspecialchars($exception->getPath()),
+                '%field%' => htmlspecialchars($exception->getPropertyName()),
+                '%entity%' => htmlspecialchars($exception->getEntityName()),
+            ],
+            'JoliMediaEasyAdminBundle'
+        );
     }
 
     /**

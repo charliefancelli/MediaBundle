@@ -3,6 +3,7 @@
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use EasyCorp\Bundle\EasyAdminBundle\Provider\AdminContextProvider;
+use EasyCorp\Bundle\EasyAdminBundle\Registry\AdminControllerRegistry;
 use EasyCorp\Bundle\EasyAdminBundle\Router\AdminRouteGenerator;
 use EasyCorp\Bundle\EasyAdminBundle\Router\AdminRouteLoader;
 use EasyCorp\Bundle\EasyAdminBundle\Router\AdminUrlGenerator;
@@ -15,9 +16,11 @@ use JoliCode\MediaBundle\Bridge\EasyAdmin\Paginator\MediaPaginator;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Router\MediaAdminRouter;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Routing\MediaAdminRouteLoader;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Twig\JoliMediaEasyAdminExtension;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Usage\EasyAdminMediaUsageUrlGenerator;
 use JoliCode\MediaBundle\Bridge\Form\DataTransformer\MediaTransformer;
 use JoliCode\MediaBundle\Bridge\Security\Voter\MediaVoter;
 use JoliCode\MediaBundle\Bridge\Twig\JoliMediaAdminExtension;
+use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
 
 return static function (ContainerConfigurator $container): void {
     $container->services()
@@ -59,6 +62,17 @@ return static function (ContainerConfigurator $container): void {
         ])
         ->alias(MediaAdminRouter::class, 'joli_media_easy_admin.router')
 
+        // usages: the edit links of the places where a media is used
+        ->set('joli_media_easy_admin.usage_url_generator', EasyAdminMediaUsageUrlGenerator::class)
+        ->args([
+            // EasyAdmin 5.x registry, or its 4.x counterpart
+            '$crudControllerRegistry' => service(class_exists(AdminControllerRegistry::class) ? AdminControllerRegistry::class : 'EasyCorp\Bundle\EasyAdminBundle\Registry\CrudControllerRegistry'),
+            // AdminUrlGenerator is not shared: a fresh instance is asked for each URL
+            '$adminUrlGenerator' => service_closure(AdminUrlGenerator::class),
+            '$doctrine' => service('doctrine')->nullOnInvalid(),
+        ])
+        ->alias(MediaUsageUrlGeneratorInterface::class, 'joli_media_easy_admin.usage_url_generator')
+
         // paginator
         ->set('joli_media_easy_admin.paginator', MediaPaginator::class)
         ->args([
@@ -84,6 +98,7 @@ return static function (ContainerConfigurator $container): void {
             '$metadataStorage' => service('joli_media.metadata.storage')->nullOnInvalid(),
             '$metadataFields' => param('joli_media.metadata.fields'),
             '$logger' => service('logger')->ignoreOnInvalid(),
+            '$usageFinder' => service('joli_media.usage_finder')->ignoreOnInvalid(),
         ])
         ->call('setContainer', [service('service_container')])
         ->tag('controller.service_arguments')

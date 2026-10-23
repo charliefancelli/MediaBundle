@@ -24,8 +24,10 @@ use JoliCode\MediaBundle\Tests\Application\Doctrine\QueryCounterMiddleware;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
+use JoliCode\MediaBundle\Tests\Application\Usage\StaticMediaUsageProvider;
 use JoliCode\MediaBundle\Tests\BaseTestCase;
 use JoliCode\MediaBundle\Tests\Metadata\UnsavableMetadataStorage;
+use JoliCode\MediaBundle\Usage\MediaUsage;
 use Psr\Container\ContainerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -79,6 +81,8 @@ class MediaAdminControllerTest extends WebTestCase
         foreach ([self::METADATA_PATH, self::OTHER_PATH, self::LONG_PATH] as $path) {
             $storage->delete('default', $path);
         }
+
+        StaticMediaUsageProvider::reset();
 
         parent::tearDown();
     }
@@ -572,6 +576,195 @@ class MediaAdminControllerTest extends WebTestCase
         }
     }
 
+    public function testDeleteBlockedByAProviderUsageWithoutField(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', [
+            new MediaUsage('Footer block', blocksDeletion: true),
+        ]);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
+        $this->assertResponseIsSuccessful();
+
+        $this->client->submit($crawler->filter('form[name="delete"]')->form());
+        $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf?_tab=4');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "not_used/default.pdf" is used in one place: Footer block. It cannot be deleted.');
+    }
+
+    public function testUsagesTabListsTheUsages(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'restrict.pdf', [
+            new MediaUsage('Footer <b>block</b>', field: 'content', editUrl: '/blocks/12/edit?a=1&b=2', blocksDeletion: true),
+        ]);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=4');
+        $this->assertResponseIsSuccessful();
+
+        $this->assertSelectorExists('#tablist-tab-usages.active');
+        $this->assertSelectorExists('#tab-usages.active');
+
+        $rows = $crawler->filter('#tab-usages tr.usage');
+        // two Page entities (Doctrine) + the provider one
+        $this->assertCount(3, $rows);
+
+        $pageRows = $rows->reduce(static fn (Crawler $row): bool => str_contains($row->text(), 'Page'));
+        $this->assertGreaterThanOrEqual(2, \count($pageRows));
+        $editLink = $pageRows->first()->filter('a.usage-edit-link');
+        $this->assertCount(1, $editLink);
+        $this->assertMatchesRegularExpression('#/admin/.*(page|Page).*edit#i', (string) $editLink->attr('href'));
+
+        $providerRow = $rows->last();
+        $this->assertStringContainsString('Footer <b>block</b>', $providerRow->filter('td')->first()->text());
+        $this->assertCount(1, $providerRow->filter('.badge-danger'));
+        $this->assertSame('content', $providerRow->filter('code')->text());
+        $this->assertSame('/blocks/12/edit?a=1&b=2', $providerRow->filter('a.usage-edit-link')->attr('href'));
+        $this->assertStringNotContainsString('<b>block</b>', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testTheUsagesTabSaysWhenTheListIsTruncated(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', array_map(
+            static fn (int $number): MediaUsage => new MediaUsage('Block ' . $number, blocksDeletion: true),
+            range(1, 51),
+        ));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
+
+        $this->assertCount(50, $crawler->filter('#tab-usages tr.usage'));
+        $this->assertStringContainsString('(50+)', $crawler->filter('#tablist-tab-usages')->text());
+        $this->assertSelectorTextContains('#tab-usages .usages-truncated', 'More usages are not shown');
+        $this->assertStringNotContainsString('Block 51', (string) $this->client->getResponse()->getContent());
+
+        $this->client->submit($this->client->getCrawler()->filter('form[name="delete"]')->form());
+        $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf?_tab=4');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "not_used/default.pdf" is used in more than 50 places, among which: Block 1, Block 2');
+        $this->assertStringNotContainsString('Block 51', $this->client->getCrawler()->filter('.alert-danger')->text());
+    }
+
+    public function testUsagesAtTheLimitAreNotReportedAsTruncated(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', array_map(
+            static fn (int $number): MediaUsage => new MediaUsage('Block ' . $number),
+            range(1, 50),
+        ));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
+
+        $this->assertCount(50, $crawler->filter('#tab-usages tr.usage'));
+        $this->assertStringContainsString('(50)', $crawler->filter('#tablist-tab-usages')->text());
+        $this->assertSelectorNotExists('#tab-usages .usages-truncated');
+    }
+
+    public function testUnusedMediaShowsNoUsage(): void
+    {
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
+        $this->assertResponseIsSuccessful();
+
+        $this->assertSelectorExists('#tablist-tab-usages');
+        $this->assertSelectorTextContains('#tab-usages', 'This media is not used anywhere.');
+        $this->assertSelectorNotExists('#tab-usages tr.usage');
+    }
+
+    public function testRefusedDeletionListsTheUsages(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'restrict.pdf', [
+            new MediaUsage('Footer <b>block</b>', blocksDeletion: true),
+        ]);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf');
+        $this->client->submit($crawler->filter('form[name="delete"]')->form());
+
+        $this->assertResponseRedirects('/admin/media/show/restrict.pdf?_tab=4');
+        $this->client->followRedirect();
+        $this->assertSelectorExists('#tab-usages.active');
+        $flash = $this->client->getCrawler()->filter('.alert-danger')->text();
+        $this->assertStringContainsString('The media "restrict.pdf" is used in 3 places: ', $flash);
+        $this->assertStringContainsString('Footer <b>block</b>', $flash, 'The label is displayed as text, not interpreted as HTML.');
+        $this->assertSelectorNotExists('.alert-danger b');
+    }
+
+    public function testUnavailableTabsFallBackToTheGeneralTab(): void
+    {
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=9');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tablist-tab-general.active');
+        $this->assertSelectorNotExists('#tablist-tab-usages.active');
+
+        // not processable: no variations tab
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=2');
+        $this->assertSelectorExists('#tab-general.active');
+    }
+
+    public function testWithoutUsageFinderTheDeletionMessageIsEscapedAndTheTabIsNotRequested(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', [
+            new MediaUsage('Footer <b>block</b>', blocksDeletion: true),
+        ]);
+        $this->client->disableReboot();
+
+        $container = static::getContainer();
+        /** @var LibraryContainer $libraries */
+        $libraries = $container->get('joli_media.library_container');
+        /** @var Config $config */
+        $config = $container->get('joli_media_easy_admin.config');
+        /** @var Resolver $resolver */
+        $resolver = $container->get('joli_media.resolver');
+        /** @var Converter $converter */
+        $converter = $container->get('joli_media.converter');
+        /** @var TranslatorInterface $translator */
+        $translator = $container->get('translator');
+        /** @var Environment $twig */
+        $twig = $container->get('twig');
+        /** @var FormFactoryInterface $formFactory */
+        $formFactory = $container->get('form.factory');
+        /** @var MediaAdminRouter $router */
+        $router = $container->get('joli_media_easy_admin.router');
+        /** @var MediaPaginator $paginator */
+        $paginator = $container->get('joli_media_easy_admin.paginator');
+        /** @var AssetRegistrar $assetRegistrar */
+        $assetRegistrar = $container->get('joli_media_easy_admin.asset.registrar');
+        /** @var AuthorizationCheckerInterface $authorizationChecker */
+        $authorizationChecker = $container->get('security.authorization_checker');
+        $controller = new MediaAdminController($libraries, $config, $resolver, $converter, $translator, $twig, $formFactory, $router, $paginator, $assetRegistrar, $authorizationChecker);
+        $container->set('joli_media_easy_admin.controller.admin', $controller);
+        $controller->setContainer($container);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
+        $this->assertSelectorNotExists('#tablist-tab-usages');
+
+        // without the finder the usages tab does not exist, whatever the requested tab
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/sub/folder/circle-pattern.png?_tab=4');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tablist-tab-general.active');
+        $this->assertSelectorNotExists('#tablist-tab-usages');
+        $this->assertSelectorNotExists('#tab-usages');
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
+        $this->client->submit($crawler->filter('form[name="delete"]')->form());
+
+        $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "not_used/default.pdf" is used by "Footer <b>block</b>". It cannot be deleted.');
+        $this->assertSelectorNotExists('.alert-danger b');
+    }
+
+    public function testRefusedFolderDeletionListsTheUsages(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'sub/folder/circle-pattern.png', [
+            new MediaUsage('Footer block', blocksDeletion: true),
+        ]);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
+        $this->assertResponseIsSuccessful();
+
+        $this->client->submit($crawler->filter('form[name="delete_directory"]')->form());
+        // the folder delete form lives on the explorer
+        $this->assertResponseRedirects('/admin/media/explore/sub/folder');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "sub/folder/circle-pattern.png" is used in 5 places: ');
+        $this->assertSelectorTextContains('.alert-danger', 'Footer block');
+    }
+
     public function testDelete(): void
     {
         // MediaDeleteBehavior::RESTRICT
@@ -581,9 +774,9 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertResponseIsSuccessful();
 
         $this->client->submit($crawler->filter('form[name="delete"]')->form());
-        $this->assertResponseRedirects('/admin/media/show/restrict.pdf');
+        $this->assertResponseRedirects('/admin/media/show/restrict.pdf?_tab=4');
         $this->client->followRedirect();
-        $this->assertSelectorTextContains('.alert-danger', 'The media "restrict.pdf" is used in the "mediaRestrict" field of the "JoliCode\MediaBundle\Tests\Application\Entity\Page" entity. It cannot be deleted.');
+        $this->assertSelectorTextContains('.alert-danger', 'The media "restrict.pdf" is used in 2 places: ');
 
         // MediaDeleteBehavior::SET_NULL
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore');
