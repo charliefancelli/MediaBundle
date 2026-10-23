@@ -142,13 +142,11 @@
 {% block main %}
     {% set has_variations_tab = config.isVisible('show_variations_list') and media.variations|length > 0 %}
     {% set has_usages_tab = usages is not null %}
-    {# tab 3 is the "Metadata" one: the numbers are fixed so that the tabs keep their meaning #}
-    {% set active_tab = (displayed_tab == 2 and has_variations_tab) or (displayed_tab == 4 and has_usages_tab) ? displayed_tab : 1 %}
     {% if has_variations_tab or has_usages_tab %}
         <div class="nav-tabs-custom form-tabs-tablist">
             <ul class="nav nav-tabs" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <a class="nav-link{% if active_tab == 1 %} active{% endif %}" href="#tab-general" id="tablist-tab-general" data-bs-toggle="tab" aria-selected="true" role="tab">
+                    <a class="nav-link{% if displayed_tab == 1 %} active{% endif %}" href="#tab-general" id="tablist-tab-general" data-bs-toggle="tab" aria-selected="true" role="tab">
                         <span class="icon tab-nav-item-icon">
                             <i class="fa fa-circle-info"></i>
                         </span>
@@ -157,7 +155,7 @@
                 </li>
                 {% if has_variations_tab %}
                 <li class="nav-item" role="presentation">
-                    <a class="nav-link{% if active_tab == 2 %} active{% endif %}" href="#tab-variations" id="tablist-tab-variations" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
+                    <a class="nav-link{% if displayed_tab == 2 %} active{% endif %}" href="#tab-variations" id="tablist-tab-variations" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
                         <span class="icon tab-nav-item-icon">
                             <i class="fa fa-images"></i>
                         </span>
@@ -167,7 +165,7 @@
                 {% endif %}
                 {% if has_usages_tab %}
                 <li class="nav-item" role="presentation">
-                    <a class="nav-link{% if active_tab == 4 %} active{% endif %}" href="#tab-usages" id="tablist-tab-usages" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
+                    <a class="nav-link{% if displayed_tab == 4 %} active{% endif %}" href="#tab-usages" id="tablist-tab-usages" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab">
                         <span class="icon tab-nav-item-icon">
                             <i class="fa fa-link"></i>
                         </span>
@@ -180,13 +178,13 @@
 
         <div class="nav-tabs-custom form-tabs-content">
             <div class="tab-content">
-                <div id="tab-general" class="tab-pane{% if active_tab == 1 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-general">
+                <div id="tab-general" class="tab-pane{% if displayed_tab == 1 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-general">
                     <div class="row">
                         {{ block('media_general') }}
                     </div>
                 </div>
                 {% if has_variations_tab %}
-                <div id="tab-variations" class="tab-pane{% if active_tab == 2 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-variations">
+                <div id="tab-variations" class="tab-pane{% if displayed_tab == 2 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-variations">
                     <div class="row">
                         <table class="table datagrid file-explorer-list {{ media.variations|length == 0 ? 'datagrid-empty' }}">
                         <table class="table table-bordered table-striped table-hover">
@@ -265,7 +263,7 @@
                 </div>
                 {% endif %}
                 {% if has_usages_tab %}
-                <div id="tab-usages" class="tab-pane{% if active_tab == 4 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-usages">
+                <div id="tab-usages" class="tab-pane{% if displayed_tab == 4 %} active{% endif %} field-form_tab" role="tabpanel" aria-labelledby="tablist-tab-usages">
                     {% if usages|length == 0 %}
                         <p class="text-muted usages-empty">{{ 'usage.none'|trans }}</p>
                     {% else %}

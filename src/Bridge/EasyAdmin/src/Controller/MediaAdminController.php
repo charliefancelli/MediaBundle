@@ -497,7 +497,7 @@ class MediaAdminController extends AbstractController
         $query = $request->query->all();
         // with pretty URLs, the tab is a plain query parameter; otherwise it travels
         // through the EasyAdmin "routeParams" query parameter
-        $displayedTab = $query['_tab'] ?? $query['routeParams']['_tab'] ?? 1;
+        $displayedTab = (int) ($query['_tab'] ?? $query['routeParams']['_tab'] ?? 1);
 
         $renameFileForm = $this->createRenameFileForm($key);
         $renameFileForm->handleRequest($request);
@@ -563,6 +563,14 @@ class MediaAdminController extends AbstractController
                 }
             }
         }
+
+        $hasVariationsTab = $this->config->isVisible('show_variations_list') && \count($media->getVariations()) > 0;
+        $displayedTab = match (true) {
+            2 === $displayedTab && $hasVariationsTab => 2,
+            // the third tab is reserved for the metadata
+            self::USAGES_TAB === $displayedTab && null !== $this->usageFinder => self::USAGES_TAB,
+            default => 1,
+        };
 
         return new Response($this->twig->render('@JoliMediaEasyAdmin/show.html.twig', [
             'breadcrumb' => $this->generateBreadcrumb($key, 'explore'),
@@ -940,10 +948,6 @@ class MediaAdminController extends AbstractController
     }
 
     /**
-     * Returns the key of the directory containing the given key, the root directory
-     * being identified by an empty key rather than by the "." returned by dirname().
-     */
-    /**
      * Names where the blocking media is used when the usage finder is available (and knows
      * about at least one usage), else describes the first usage reported by the exception.
      */
@@ -970,14 +974,19 @@ class MediaAdminController extends AbstractController
         return $this->translator->trans(
             '' === $exception->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
             [
-                '%media%' => $exception->getPath(),
-                '%field%' => $exception->getPropertyName(),
-                '%entity%' => $exception->getEntityName(),
+                // EasyAdmin renders the flash messages as raw HTML
+                '%media%' => htmlspecialchars($exception->getPath()),
+                '%field%' => htmlspecialchars($exception->getPropertyName()),
+                '%entity%' => htmlspecialchars($exception->getEntityName()),
             ],
             'JoliMediaEasyAdminBundle'
         );
     }
 
+    /**
+     * Returns the key of the directory containing the given key, the root directory
+     * being identified by an empty key rather than by the "." returned by dirname().
+     */
     private function getParentKey(string $key): string
     {
         $parentKey = \dirname($key);

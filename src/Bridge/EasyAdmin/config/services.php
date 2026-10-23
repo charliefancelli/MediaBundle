@@ -68,6 +68,7 @@ return static function (ContainerConfigurator $container): void {
             // EasyAdmin 5.x registry, or its 4.x counterpart
             '$crudControllerRegistry' => service(class_exists(AdminControllerRegistry::class) ? AdminControllerRegistry::class : 'EasyCorp\Bundle\EasyAdminBundle\Registry\CrudControllerRegistry'),
             '$adminUrlGenerator' => service(AdminUrlGenerator::class),
+            '$doctrine' => service('doctrine')->nullOnInvalid(),
         ])
         ->alias(MediaUsageUrlGeneratorInterface::class, 'joli_media_easy_admin.usage_url_generator')
 

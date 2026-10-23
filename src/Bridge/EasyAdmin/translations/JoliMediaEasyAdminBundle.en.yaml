@@ -49,7 +49,7 @@ media:
         forbidden: 'The media "%media%" is stored in a reserved directory and cannot be modified.'
         in_use: 'The media "%media%" is used in the "%field%" field of the "%entity%" entity. It cannot be deleted.'
         in_use_by: 'The media "%media%" is used by "%entity%". It cannot be deleted.'
-        in_use_with_usages: 'The media "%media%" is used in %count% place(s): %usages%. It cannot be deleted.'
+        in_use_with_usages: '{1}The media "%media%" is used in one place: %usages%. It cannot be deleted.|]1,Inf[The media "%media%" is used in %count% places: %usages%. It cannot be deleted.'
         required: 'Please choose a media file.'
     inaccessible:
         explanation: 'The media "%media%" is not accessible. It may have been deleted or moved.'
