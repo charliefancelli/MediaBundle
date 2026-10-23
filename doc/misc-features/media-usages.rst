@@ -41,6 +41,8 @@ The finder returns a list of ``MediaUsage`` objects, built from two sources:
 
 For a Doctrine column, the ``MediaUsage`` carries the entity class, the field name and the identifier of the entity (the identifiers of a composite key are joined with ``-``). Its label is the entity cast to a string when it implements ``\Stringable``, else something like ``Article #12``.
 
+In a single-table or joined inheritance hierarchy, the usages of a child entity are reported through the parent entity: the entity class, the label and the edit link are the ones of the parent.
+
 Each ``MediaUsage`` has the following properties:
 
 ``label``
@@ -128,6 +130,8 @@ MediaUsageUrlGeneratorInterface
 ``JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface`` is an extension point: its ``generateEditUrl(MediaUsage $usage): ?string`` method returns the URL of the page where a usage can be edited, or ``null`` when there is none. When a service is aliased to this interface, the finder fills the ``editUrl`` of the usages which have none. The `EasyAdmin bridge <../bridges/easy-admin.rst>`_ provides one; nothing is registered by default.
 
 A provider can also set the ``editUrl`` of its usages itself, it is then left untouched.
+
+The edit links of the EasyAdmin bridge rely on the route cache of EasyAdmin, filled when its routes are loaded (``cache:warmup`` or the first request): after clearing ``cache.easyadmin``, links may be missing until the routes are loaded again.
 
 Usages in the admin bridges
 ---------------------------

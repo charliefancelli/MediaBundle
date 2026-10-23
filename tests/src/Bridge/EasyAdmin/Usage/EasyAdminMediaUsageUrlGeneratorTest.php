@@ -12,6 +12,7 @@ use EasyCorp\Bundle\EasyAdminBundle\Router\AdminUrlGenerator;
 use JoliCode\MediaBundle\Bridge\EasyAdmin\Usage\EasyAdminMediaUsageUrlGenerator;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Usage\WarmsAdminRoutesTrait;
 use JoliCode\MediaBundle\Usage\MediaUsage;
 use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -21,11 +22,15 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
 {
+    use WarmsAdminRoutesTrait;
+
     private MediaUsageUrlGeneratorInterface $generator;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->warmAdminRoutes();
 
         /** @var MediaUsageUrlGeneratorInterface $generator */
         $generator = static::getContainer()->get(MediaUsageUrlGeneratorInterface::class);

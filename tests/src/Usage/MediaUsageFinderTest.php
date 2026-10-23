@@ -28,11 +28,15 @@ use Symfony\Contracts\Cache\CacheInterface;
 
 class MediaUsageFinderTest extends WebTestCase
 {
+    use WarmsAdminRoutesTrait;
+
     private MediaUsageFinder $finder;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->warmAdminRoutes();
 
         /** @var MediaUsageFinder $finder */
         $finder = static::getContainer()->get('joli_media.usage_finder');
