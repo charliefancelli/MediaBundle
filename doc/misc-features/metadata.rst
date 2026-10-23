@@ -8,7 +8,7 @@ The feature is **disabled by default**. While it is disabled, the bundle behaves
 Enabling the Metadata
 ---------------------
 
-The default ``doctrine`` storage requires the Doctrine ORM and the DoctrineBundle, which are suggested (not required) by the bundle:
+The default ``doctrine`` storage requires the Doctrine ORM and the DoctrineBundle, which are suggested (``suggest`` section of ``composer.json``), not required, by the bundle:
 
 .. code-block:: terminal
 
@@ -94,6 +94,8 @@ The ``JoliCode\MediaBundle\Metadata\MetadataProvider`` service reads the metadat
 ``getMany()`` reads the metadata of a whole list with one query, which avoids the "N+1" queries when displaying a gallery::
 
     use JoliCode\MediaBundle\Metadata\MetadataProvider;
+    use JoliCode\MediaBundle\Storage\OriginalStorage;
+    use Symfony\Component\HttpFoundation\Response;
 
     class GalleryController
     {
@@ -155,6 +157,7 @@ The ``JoliCode\MediaBundle\Metadata\MetadataManager`` service saves a ``MediaMet
     use JoliCode\MediaBundle\Metadata\MetadataManager;
     use JoliCode\MediaBundle\Metadata\MetadataProvider;
     use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+    use JoliCode\MediaBundle\Model\Media;
 
     class MetadataUpdater
     {
@@ -191,7 +194,9 @@ Moves and Deletions
 The metadata follow their media: when a media or a folder is moved or renamed, the metadata move along with it, and when a media or a folder is deleted, its metadata are deleted. There is nothing to do on your side, and nothing to listen to.
 
 - With the DoctrineBundle, the listeners that already keep the ``MediaType`` columns up to date also move and delete the metadata, inside their transaction.
-- Without the DoctrineBundle (with a custom storage), a ``MetadataFollowListener`` does the same after the ``POST_MOVE_*`` and ``POST_DELETE_*`` events.
+- Without the DoctrineBundle, those listeners do not exist: a ``MetadataFollowListener`` does the same after the ``POST_MOVE_*`` and ``POST_DELETE_*`` events.
+
+This holds for any storage, your own included: the listener that runs depends on the DoctrineBundle being installed, not on the storage.
 
 If the target of a move already carries metadata (the metadata of a file that was deleted outside of JoliMedia, for instance), they are replaced by the ones of the moved media. Metadata are attached to a library and a path: moving ``a.png`` in a library does not touch the ``a.png`` of another one. Moving or deleting a folder never touches the metadata of its sibling folders, even when their names start with the same characters.
 
@@ -230,7 +235,7 @@ Then reference the service:
             enabled: true
             storage: app.my_metadata_storage
 
-The bundle then registers neither the Doctrine mapping nor the Doctrine storage, so the ORM is not required. The metadata still follow the moves and deletions of the media, through the ``MetadataFollowListener`` (see `Moves and Deletions`_), which calls your storage.
+The bundle then registers neither the Doctrine mapping nor the Doctrine storage, so the ORM is not required. The metadata still follow the moves and deletions of the media, through the bundle's move and delete listeners, or through the ``MetadataFollowListener`` when the DoctrineBundle is absent (see `Moves and Deletions`_): they call your storage.
 
 EasyAdmin
 ---------
