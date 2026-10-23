@@ -14,8 +14,17 @@ use JoliCode\MediaBundle\Usage\MediaUsageProviderInterface;
  * Only the providers are consulted: the Doctrine columns with a "restrict" behavior are already guarded
  * by the delete listeners.
  */
-readonly class UsageDeleteGuardListener
+class UsageDeleteGuardListener
 {
+    /**
+     * Medias already cleared by the check of the folder being deleted (key: "library|path"), so that their own
+     * pre-delete event does not ask the providers again. An entry is dropped once used, the set is replaced by
+     * the next folder check: it stays bounded by the size of one folder.
+     *
+     * @var array<string, true>
+     */
+    private array $clearedByFolder = [];
+
     /**
      * @param iterable<MediaUsageProviderInterface> $providers
      */
@@ -26,6 +35,14 @@ readonly class UsageDeleteGuardListener
 
     public function onMediaPreDelete(PreDeleteMediaEvent $event): void
     {
+        $key = $this->key($event->originalStorage, $event->path);
+
+        if (isset($this->clearedByFolder[$key])) {
+            unset($this->clearedByFolder[$key]);
+
+            return;
+        }
+
         $this->assertNotBlocked($event->originalStorage, $event->path);
     }
 
@@ -37,8 +54,12 @@ readonly class UsageDeleteGuardListener
             return;
         }
 
+        $this->clearedByFolder = [];
+
+        // listMedias() loads the whole listing before returning: there is no lazy public API to stop early
         foreach ($storage->listMedias($event->path, recursive: true) as $media) {
             $this->assertNotBlocked($storage, $media->getPath());
+            $this->clearedByFolder[$this->key($storage, $media->getPath())] = true;
         }
     }
 
@@ -58,6 +79,11 @@ readonly class UsageDeleteGuardListener
                 }
             }
         }
+    }
+
+    private function key(OriginalStorage $storage, string $path): string
+    {
+        return $storage->getLibrary()->getName() . '|' . $path;
     }
 
     private function hasProvider(): bool

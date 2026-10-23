@@ -118,6 +118,28 @@ class UsageDeleteGuardListenerTest extends WebTestCase
         $this->assertFalse($this->originalStorage->has('not_used/default.pdf'));
     }
 
+    public function testExceptionMessageForAUsageWithoutField(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', [
+            new MediaUsage('Footer block', blocksDeletion: true),
+        ]);
+
+        try {
+            $this->originalStorage->delete('not_used/default.pdf');
+            $this->fail('A MediaInUseException was expected.');
+        } catch (MediaInUseException $exception) {
+            $this->assertSame('The media "not_used/default.pdf" is used by "Footer block". It cannot be deleted.', $exception->getMessage());
+        }
+    }
+
+    public function testTrashedMediasAreNotAskedToTheProviders(): void
+    {
+        // the Doctrine POST listeners are active: the folder is staged in the trash and each media deleted from there
+        $this->originalStorage->deleteDirectory('not_used');
+
+        $this->assertSame(['default|not_used/default.pdf'], StaticMediaUsageProvider::getCalls());
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;

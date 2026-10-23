@@ -184,7 +184,7 @@ class MediaAdminController extends AbstractController
                 $this->addFlash(
                     'danger',
                     $this->translator->trans(
-                        'media.error.in_use',
+                        '' === $e->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
                         [
                             '%media%' => $e->getPath(),
                             '%field%' => $e->getPropertyName(),
@@ -254,7 +254,7 @@ class MediaAdminController extends AbstractController
                 $this->addFlash(
                     'danger',
                     $this->translator->trans(
-                        'media.error.in_use',
+                        '' === $e->getPropertyName() ? 'media.error.in_use_by' : 'media.error.in_use',
                         [
                             '%media%' => $e->getPath(),
                             '%field%' => $e->getPropertyName(),

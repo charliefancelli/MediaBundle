@@ -29,6 +29,14 @@ class MediaInUseException extends \RuntimeException
 
     private function format(): string
     {
+        if ('' === $this->propertyName) {
+            return \sprintf(
+                'The media "%s" is used by "%s". It cannot be deleted.',
+                $this->path,
+                $this->entityName,
+            );
+        }
+
         return \sprintf(
             'The media "%s" is used in the "%s" field of the "%s" entity. It cannot be deleted.',
             $this->path,

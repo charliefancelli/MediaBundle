@@ -6,6 +6,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use JoliCode\MediaBundle\Tests\Application\Usage\StaticMediaUsageProvider;
+use JoliCode\MediaBundle\Usage\MediaUsage;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -36,6 +38,28 @@ class MediaAdminControllerTest extends WebTestCase
             $application->setAutoExit(false);
             $application->run(new StringInput('doctrine:fixtures:load --purge-with-truncate --no-interaction --quiet'));
         }
+    }
+
+    protected function tearDown(): void
+    {
+        StaticMediaUsageProvider::reset();
+
+        parent::tearDown();
+    }
+
+    public function testDeleteBlockedByAProviderUsageWithoutField(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', [
+            new MediaUsage('Footer block', blocksDeletion: true),
+        ]);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
+        $this->assertResponseIsSuccessful();
+
+        $this->client->submit($crawler->filter('form[name="delete"]')->form());
+        $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "not_used/default.pdf" is used by "Footer block". It cannot be deleted.');
     }
 
     public function testDelete(): void
