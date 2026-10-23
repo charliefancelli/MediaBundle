@@ -20,9 +20,13 @@ use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
  */
 readonly class EasyAdminMediaUsageUrlGenerator implements MediaUsageUrlGeneratorInterface
 {
+    /**
+     * @param \Closure(): AdminUrlGenerator $adminUrlGenerator returns a new generator each time: it is not shared, and keeps
+     *                                                          the parameters it is given
+     */
     public function __construct(
         private object $crudControllerRegistry,
-        private AdminUrlGenerator $adminUrlGenerator,
+        private \Closure $adminUrlGenerator,
         private ?ManagerRegistry $doctrine = null,
     ) {
     }
@@ -46,7 +50,7 @@ readonly class EasyAdminMediaUsageUrlGenerator implements MediaUsageUrlGenerator
         }
 
         try {
-            return $this->adminUrlGenerator
+            return ($this->adminUrlGenerator)()
                 ->unsetAll()
                 ->setController($crudController)
                 ->setAction(Action::EDIT)

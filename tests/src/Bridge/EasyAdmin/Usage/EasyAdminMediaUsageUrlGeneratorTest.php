@@ -16,6 +16,7 @@ use JoliCode\MediaBundle\Usage\MediaUsage;
 use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
@@ -60,7 +61,7 @@ class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
     {
         // the constructor of AdminUrlGenerator is the EasyAdmin 5.x one
         if (!interface_exists(AdminControllerRegistryInterface::class)) {
-            $this->markTestSkipped('The AdminUrlGenerator cannot be built this way before EasyAdmin 5.');
+            $this->markTestSkipped('The AdminUrlGenerator cannot be built this way before EasyAdmin 4.28.1.');
         }
 
         // outside of an EasyAdmin request, with several dashboards, EasyAdmin refuses to generate URLs
@@ -79,7 +80,37 @@ class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
                 return 'App\Controller\AnyCrudController';
             }
         };
-        $generator = new EasyAdminMediaUsageUrlGenerator($registry, $adminUrlGenerator);
+        $generator = new EasyAdminMediaUsageUrlGenerator($registry, static fn (): AdminUrlGenerator => $adminUrlGenerator);
+
+        $this->assertNull($generator->generateEditUrl(new MediaUsage('Page', Page::class, null, 1)));
+    }
+
+    public function testARouteNotFoundGivesNoUrl(): void
+    {
+        if (!interface_exists(AdminControllerRegistryInterface::class)) {
+            $this->markTestSkipped('The AdminUrlGenerator cannot be built this way before EasyAdmin 4.28.1.');
+        }
+
+        $controllers = $this->createStub(AdminControllerRegistryInterface::class);
+        $controllers->method('getDashboardCount')->willReturn(1);
+        $controllers->method('getFirstDashboard')->willReturn('App\Controller\DashboardController');
+        $controllers->method('getFirstDashboardRoute')->willReturn('admin');
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willThrowException(new RouteNotFoundException('No route.'));
+        $adminUrlGenerator = new AdminUrlGenerator(
+            $this->createStub(AdminContextProviderInterface::class),
+            $urlGenerator,
+            $controllers,
+            $this->createStub(AdminRouteGeneratorInterface::class),
+            new ArrayAdapter(),
+        );
+        $registry = new class {
+            public function findCrudControllerByEntity(string $entityClass): string
+            {
+                return 'App\Controller\AnyCrudController';
+            }
+        };
+        $generator = new EasyAdminMediaUsageUrlGenerator($registry, static fn (): AdminUrlGenerator => $adminUrlGenerator);
 
         $this->assertNull($generator->generateEditUrl(new MediaUsage('Page', Page::class, null, 1)));
     }
@@ -102,7 +133,7 @@ class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
         };
         /** @var AdminUrlGenerator $adminUrlGenerator */
         $adminUrlGenerator = static::getContainer()->get(AdminUrlGenerator::class);
-        $generator = new EasyAdminMediaUsageUrlGenerator($registry, $adminUrlGenerator, $doctrine);
+        $generator = new EasyAdminMediaUsageUrlGenerator($registry, static fn (): AdminUrlGenerator => $adminUrlGenerator, $doctrine);
 
         $this->assertNull($generator->generateEditUrl(new MediaUsage('Page', Page::class, null, '1-2')));
     }
