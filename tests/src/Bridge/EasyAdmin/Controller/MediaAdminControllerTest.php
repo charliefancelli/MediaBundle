@@ -104,6 +104,41 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertStringNotContainsString('<b>block</b>', (string) $this->client->getResponse()->getContent());
     }
 
+    public function testTheUsagesTabSaysWhenTheListIsTruncated(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', array_map(
+            static fn (int $number): MediaUsage => new MediaUsage('Block ' . $number, blocksDeletion: true),
+            range(1, 51),
+        ));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
+
+        $this->assertCount(50, $crawler->filter('#tab-usages tr.usage'));
+        $this->assertStringContainsString('(50+)', $crawler->filter('#tablist-tab-usages')->text());
+        $this->assertSelectorTextContains('#tab-usages .usages-truncated', 'More usages are not shown');
+        $this->assertStringNotContainsString('Block 51', (string) $this->client->getResponse()->getContent());
+
+        $this->client->submit($this->client->getCrawler()->filter('form[name="delete"]')->form());
+        $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf?_tab=4');
+        $this->client->followRedirect();
+        $this->assertSelectorTextContains('.alert-danger', 'The media "not_used/default.pdf" is used in more than 50 places, among which: Block 1, Block 2');
+        $this->assertStringNotContainsString('Block 51', $this->client->getCrawler()->filter('.alert-danger')->text());
+    }
+
+    public function testUsagesAtTheLimitAreNotReportedAsTruncated(): void
+    {
+        StaticMediaUsageProvider::setUsages('default', 'not_used/default.pdf', array_map(
+            static fn (int $number): MediaUsage => new MediaUsage('Block ' . $number),
+            range(1, 50),
+        ));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
+
+        $this->assertCount(50, $crawler->filter('#tab-usages tr.usage'));
+        $this->assertStringContainsString('(50)', $crawler->filter('#tablist-tab-usages')->text());
+        $this->assertSelectorNotExists('#tab-usages .usages-truncated');
+    }
+
     public function testUnusedMediaShowsNoUsage(): void
     {
         $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf?_tab=4');
@@ -138,10 +173,6 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('#tablist-tab-general.active');
         $this->assertSelectorNotExists('#tablist-tab-usages.active');
-
-        // the third tab is the metadata one, which does not exist here
-        $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=3');
-        $this->assertSelectorExists('#tab-general.active');
 
         // not processable: no variations tab
         $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=2');
@@ -184,6 +215,14 @@ class MediaAdminControllerTest extends WebTestCase
 
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
         $this->assertSelectorNotExists('#tablist-tab-usages');
+
+        // without the finder the usages tab does not exist, whatever the requested tab
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/sub/folder/circle-pattern.png?_tab=4');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tablist-tab-general.active');
+        $this->assertSelectorNotExists('#tablist-tab-usages');
+        $this->assertSelectorNotExists('#tab-usages');
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/not_used/default.pdf');
         $this->client->submit($crawler->filter('form[name="delete"]')->form());
 
         $this->assertResponseRedirects('/admin/media/show/not_used/default.pdf');

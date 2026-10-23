@@ -62,6 +62,11 @@ class MediaAdminController extends AbstractController
      */
     public const USAGES_TAB = 4;
 
+    /**
+     * The number of usages listed on the page of a media and in the message of a refused deletion.
+     */
+    public const USAGES_LIMIT = 50;
+
     public function __construct(
         private readonly LibraryContainer $libraries,
         private readonly Config $config,
@@ -572,6 +577,9 @@ class MediaAdminController extends AbstractController
             default => 1,
         };
 
+        // one more than displayed, to know whether the list is truncated
+        $usages = $this->usageFinder?->find($key, $this->getLibrary()->getName(), self::USAGES_LIMIT + 1);
+
         return new Response($this->twig->render('@JoliMediaEasyAdmin/show.html.twig', [
             'breadcrumb' => $this->generateBreadcrumb($key, 'explore'),
             'config' => $this->config,
@@ -581,7 +589,8 @@ class MediaAdminController extends AbstractController
             'media' => $media,
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
-            'usages' => $this->usageFinder?->find($key, $this->getLibrary()->getName()),
+            'usages' => null === $usages ? null : \array_slice($usages, 0, self::USAGES_LIMIT),
+            'usages_truncated' => null !== $usages && \count($usages) > self::USAGES_LIMIT,
         ]));
     }
 
@@ -953,18 +962,21 @@ class MediaAdminController extends AbstractController
      */
     private function createInUseMessage(MediaInUseException $exception): string
     {
-        $usages = $this->usageFinder?->find($exception->getPath(), $this->getLibrary()->getName()) ?? [];
+        // one more than displayed, to know whether the list is truncated
+        $usages = $this->usageFinder?->find($exception->getPath(), $this->getLibrary()->getName(), self::USAGES_LIMIT + 1) ?? [];
 
         if ([] !== $usages) {
+            $truncated = \count($usages) > self::USAGES_LIMIT;
+
             return $this->translator->trans(
-                'media.error.in_use_with_usages',
+                $truncated ? 'media.error.in_use_with_many_usages' : 'media.error.in_use_with_usages',
                 [
                     '%media%' => htmlspecialchars($exception->getPath()),
-                    '%count%' => \count($usages),
+                    '%count%' => $truncated ? self::USAGES_LIMIT : \count($usages),
                     // EasyAdmin renders the flash messages as raw HTML
                     '%usages%' => implode(', ', array_map(
                         static fn (MediaUsage $usage): string => htmlspecialchars($usage->label),
-                        $usages,
+                        \array_slice($usages, 0, self::USAGES_LIMIT),
                     )),
                 ],
                 'JoliMediaEasyAdminBundle'

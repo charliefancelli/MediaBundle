@@ -50,6 +50,7 @@ media:
         forbidden: 'Le média "%media%" est stocké dans un dossier réservé et ne peut pas être modifié.'
         in_use: 'Le media "%media%" est utilisé dans le champ "%field%" de l''entité "%entity%". Il ne peut pas être supprimé.'
         in_use_by: 'Le media "%media%" est utilisé par "%entity%". Il ne peut pas être supprimé.'
+        in_use_with_many_usages: 'Le média "%media%" est utilisé à plus de %count% endroits, dont : %usages%. Il ne peut pas être supprimé.'
         in_use_with_usages: '{1}Le média "%media%" est utilisé à un endroit : %usages%. Il ne peut pas être supprimé.|]1,Inf[Le média "%media%" est utilisé à %count% endroits : %usages%. Il ne peut pas être supprimé.'
     inaccessible:
         explanation: 'Le média "%media%" n''est pas accessible. Il a peut-être été supprimé ou déplacé.'
@@ -114,6 +115,7 @@ usage:
     label: 'Utilisé dans'
     label_plural: 'Utilisations'
     none: 'Ce média n''est utilisé nulle part.'
+    truncated: 'D''autres utilisations ne sont pas affichées : seules les %count% premières sont listées.'
 variation:
     label: 'Variation'
     label_plural: 'Variations'

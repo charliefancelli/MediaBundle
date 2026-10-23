@@ -169,7 +169,7 @@
                         <span class="icon tab-nav-item-icon">
                             <i class="fa fa-link"></i>
                         </span>
-                        {{ 'usage.label_plural'|trans }}{% if usages|length > 0 %} ({{ usages|length }}){% endif %}
+                        {{ 'usage.label_plural'|trans }}{% if usages|length > 0 %} ({{ usages|length }}{% if usages_truncated|default(false) %}+{% endif %}){% endif %}
                     </a>
                 </li>
                 {% endif %}
@@ -296,6 +296,9 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        {% if usages_truncated|default(false) %}
+                            <p class="text-muted usages-truncated">{{ 'usage.truncated'|trans({ '%count%': usages|length }) }}</p>
+                        {% endif %}
                     {% endif %}
                 </div>
                 {% endif %}

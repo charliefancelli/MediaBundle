@@ -281,7 +281,7 @@ The variation configured on a field always takes precedence over this default on
 Usages of a media
 -----------------
 
-The page of a media displays a "Usages" tab listing where the media is used: the entities with a ``media`` or ``media_long`` column holding it, and the places reported by your own `usage providers <../misc-features/media-usages.rst>`_. Each usage shows its label, its field, whether it blocks the deletion of the media, and an "Edit" link to the edit page of the entity when it can be built. The tab is selected with the ``_tab=4`` query parameter.
+The page of a media displays a "Usages" tab listing where the media is used: the entities with a ``media`` or ``media_long`` column holding it, and the places reported by your own `usage providers <../misc-features/media-usages.rst>`_. Each usage shows its label, its field, whether it blocks the deletion of the media, and an "Edit" link to the edit page of the entity when it can be built. The tab lists the first 50 usages and says when more exist. The tab is selected with the ``_tab=4`` query parameter.
 
 The link goes to the CRUD controller managing the entity. When several CRUD controllers manage the same entity, the link uses the one EasyAdmin returns for the entity (on EasyAdmin 4 and 5, the last one registered). There is no link for entities with a composite identifier, nor when no URL can be generated for the entity.
 

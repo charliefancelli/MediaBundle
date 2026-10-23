@@ -22,7 +22,7 @@ readonly class EasyAdminMediaUsageUrlGenerator implements MediaUsageUrlGenerator
 {
     /**
      * @param \Closure(): AdminUrlGenerator $adminUrlGenerator returns a new generator each time: it is not shared, and keeps
-     *                                                          the parameters it is given
+     *                                                         the parameters it is given
      */
     public function __construct(
         private object $crudControllerRegistry,
