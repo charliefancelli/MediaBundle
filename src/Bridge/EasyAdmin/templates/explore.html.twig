@@ -31,6 +31,9 @@
                 <input type="hidden" name="routeName" value="{{ joli_media_admin_route(action) }}">
                 <input type="hidden" name="routeParams[key]" value="{{ current_key }}">
             {% endif %}
+            {% if tag is defined and tag != '' %}
+                <input type="hidden" name="tag" value="{{ tag }}">
+            {% endif %}
             <div class="form-group">
                 <div class="form-widget">
                     <twig:ea:Icon name="internal:search" class="content-search-icon" />
@@ -134,7 +137,7 @@
                 {{ include('@JoliMediaEasyAdmin/_as_image.html.twig') }}
             </span>
             <span class="gallery-grid-item__name">{{ media.filename }}</span>
-                {{ include('@JoliMediaEasyAdmin/_missing_alt.html.twig') }}
+            {{ include('@JoliMediaEasyAdmin/_missing_alt.html.twig') }}
         </a>
     </li>
 {% endblock %}

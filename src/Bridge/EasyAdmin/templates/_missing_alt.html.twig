@@ -1,5 +1,5 @@
 {%- trans_default_domain 'JoliMediaEasyAdminBundle' -%}
 
-{%- if metadata_alt_enabled is defined and metadata_alt_enabled and metadata is defined and media.fileType == 'image' and null == (metadata[media.path] ?? null)?.alt -%}
+{%- if metadata_alt_enabled is defined and metadata_alt_enabled and metadata is defined and media.fileType == 'image' and (metadata[media.path] ?? null)?.alt is null -%}
     <span class="badge text-warning" data-joli-media-missing-alt role="img" title="{{ 'media.metadata.missing_alt'|trans }}" aria-label="{{ 'media.metadata.missing_alt'|trans }}"><i class="fa fa-triangle-exclamation" aria-hidden="true"></i></span>
 {%- endif -%}

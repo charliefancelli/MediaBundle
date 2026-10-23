@@ -258,22 +258,33 @@ class MediaAdminControllerTest extends WebTestCase
 
     public function testImagesWithoutAltAreMarked(): void
     {
-        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
-        $this->assertResponseIsSuccessful();
-        $image = $this->findInGalleryFromName($crawler, 'circle-pattern.png');
-        $this->assertCount(1, $image->filter('[data-joli-media-missing-alt]'));
-        $this->assertNotSame('', (string) $image->filter('[data-joli-media-missing-alt]')->attr('title'));
+        $views = [
+            'explore grid' => ['/admin/media/explore/sub/folder', null],
+            'explore list' => ['/admin/media/explore/sub/folder', 'list'],
+            'choose grid' => ['/admin/media/choose-file/sub/folder', 'grid'],
+            'choose list' => ['/admin/media/choose-file/sub/folder', 'list'],
+        ];
+
+        foreach ($views as $label => [$url, $viewMode]) {
+            $this->setViewMode($viewMode);
+            $crawler = $this->client->request(Request::METHOD_GET, $url);
+            $this->assertResponseIsSuccessful();
+            $marker = $this->findMediaNode($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]');
+            $this->assertCount(1, $marker, $label);
+            $this->assertNotSame('', (string) $marker->attr('title'), $label);
+        }
 
         // a stored alt removes the marker
         $this->saveMetadata('A circle', '', '', []);
-        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
-        $this->assertCount(0, $this->findInGalleryFromName($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]'));
-
-        // the media picker marks them too, in both view modes
-        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file/sub/folder');
-        $this->assertCount(0, $this->findInGalleryFromName($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]'));
+        foreach ($views as $label => [$url, $viewMode]) {
+            $this->setViewMode($viewMode);
+            $crawler = $this->client->request(Request::METHOD_GET, $url);
+            $this->assertCount(1, $this->findMediaNode($crawler, 'circle-pattern.png'), $label);
+            $this->assertCount(0, $this->findMediaNode($crawler, 'circle-pattern.png')->filter('[data-joli-media-missing-alt]'), $label);
+        }
 
         // a document is never marked
+        $this->setViewMode('grid');
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore');
         $pdf = $this->findInGalleryFromName($crawler, 'default.pdf');
         $this->assertCount(1, $pdf);
@@ -282,16 +293,12 @@ class MediaAdminControllerTest extends WebTestCase
 
     public function testTheMissingAltMarkerNeedsTheAltField(): void
     {
+        // the kernel is rebooted between requests: the controller is swapped right before its only request
+        $this->useController(['caption', 'copyright', 'tags']);
         $this->client->request(Request::METHOD_GET, '/admin/media/explore/sub/folder');
-        $this->assertSelectorExists('[data-joli-media-missing-alt]');
-
-        $twig = $this->service('twig', Environment::class);
-        $html = $twig->render('@JoliMediaEasyAdmin/_missing_alt.html.twig', [
-            'media' => $this->service('joli_media.library_container', LibraryContainer::class)->getDefault()->getOriginalStorage()->get(self::METADATA_PATH),
-            'metadata' => [],
-            'metadata_alt_enabled' => false,
-        ]);
-        $this->assertSame('', trim($html));
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('.gallery-grid-item__link');
+        $this->assertSelectorNotExists('[data-joli-media-missing-alt]');
     }
 
     public function testTheListLoadsMetadataInOneQuery(): void
@@ -358,6 +365,105 @@ class MediaAdminControllerTest extends WebTestCase
         $this->assertSame('sport', trim($links->eq(0)->text()));
         $this->assertStringEndsWith('/admin/media/explore?tag=sport', (string) $links->eq(0)->attr('href'));
         $this->assertStringEndsWith('/admin/media/explore?tag=to%20see', (string) $links->eq(1)->attr('href'));
+    }
+
+    public function testAStaleTaggedRowIsSkipped(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['stale-test']);
+        $gone = new MediaMetadata('default', 'sub/folder/gone.png');
+        $gone->setTags(['stale-test']);
+        $storage = $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class);
+        $storage->save($gone);
+
+        try {
+            $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=stale-test');
+            $this->assertResponseIsSuccessful();
+            $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
+            $this->assertSelectorTextContains('ul.gallery-grid--files', 'circle-pattern.png');
+        } finally {
+            $storage->delete('default', 'sub/folder/gone.png');
+        }
+    }
+
+    public function testTheTagFilterIsIgnoredWithoutTheTagsField(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport']);
+        $this->useController(['alt', 'caption', 'copyright']);
+
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorNotExists('[data-joli-media-tag-filter]');
+        // not filtered: the directories are listed
+        $this->assertSelectorExists('ul.gallery-grid--folders .gallery-grid-item');
+    }
+
+    public function testTagsAreNotLinkedWithoutTheTagsField(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport']);
+        $this->useController(['alt', 'caption', 'copyright']);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $this->assertResponseIsSuccessful();
+        $this->assertCount(0, $crawler->filter('a[data-joli-media-tag]'));
+    }
+
+    public function testTheSearchFormsKeepTheTag(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport']);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport');
+        $this->assertSame('sport', $crawler->filter('form[data-component="media-search"] input[name="tag"]')->attr('value'));
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file?tag=sport');
+        $this->assertSame('sport', $crawler->filter('form[data-component="media-search"] input[name="tag"]')->attr('value'));
+
+        // submitting the form searches inside the tagged medias
+        $form = $crawler->filter('form[data-component="media-search"]')->form(['query' => 'circle']);
+        $crawler = $this->client->submit($form);
+        $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
+        $this->assertStringContainsString('tag=sport', $this->client->getRequest()->getUri());
+
+        $form = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file?tag=sport')->filter('form[data-component="media-search"]')->form(['query' => 'nothing-like-this']);
+        $this->client->submit($form);
+        $this->assertSelectorCount(0, 'ul.gallery-grid--files .gallery-grid-item');
+
+        $this->assertSelectorExists('[data-joli-media-tag-filter]');
+    }
+
+    public function testTheViewModeLinksKeepTheSearchAndTheTag(): void
+    {
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/choose-file?tag=sport&query=circle');
+        $href = (string) $crawler->filter('.joli-media-view-switch a')->first()->attr('href');
+        $this->assertStringContainsString('view_mode=list', $href);
+        $this->assertStringContainsString('tag=sport', $href);
+        $this->assertStringContainsString('query=circle', $href);
+
+        $this->client->request(Request::METHOD_GET, $href);
+        $this->assertResponseRedirects();
+        $location = (string) $this->client->getResponse()->headers->get('Location');
+        $this->assertStringContainsString('tag=sport', $location);
+        $this->assertStringContainsString('query=circle', $location);
+        $this->assertStringNotContainsString('view_mode', $location);
+    }
+
+    public function testTheRenderedPaginationKeepsTheTag(): void
+    {
+        $this->saveMetadata('Alt', '', '', ['sport']);
+        $other = new MediaMetadata('default', self::OTHER_PATH);
+        $other->setTags(['sport']);
+        $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class)->save($other);
+
+        $this->useController(['alt', 'caption', 'copyright', 'tags'], 1);
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/explore?tag=sport');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorCount(1, 'ul.gallery-grid--files .gallery-grid-item');
+
+        $links = $crawler->filter('.pagination a')->each(static fn (Crawler $node): string => (string) $node->attr('href'));
+        $pageLinks = array_filter($links, static fn (string $href): bool => str_contains($href, 'page=2'));
+        $this->assertNotEmpty($pageLinks);
+        foreach ($pageLinks as $href) {
+            $this->assertStringContainsString('tag=sport', $href);
+        }
     }
 
     public function testDelete(): void
@@ -737,6 +843,70 @@ class MediaAdminControllerTest extends WebTestCase
         $storage = static::getContainer()->get('test.joli_media.metadata.storage');
         \assert($storage instanceof MetadataStorageInterface);
         $storage->save($metadata);
+    }
+
+    private function setViewMode(?string $mode): void
+    {
+        // the view mode lives in the session: switch it through the redirecting URL
+        $this->client->request(Request::METHOD_GET, '/admin/media/explore?view_mode=' . ($mode ?? 'grid'));
+    }
+
+    private function findMediaNode(Crawler $crawler, string $name): Crawler
+    {
+        $grid = $this->findInGalleryFromName($crawler, $name);
+        if (\count($grid) > 0) {
+            return $grid;
+        }
+
+        return $crawler->filter('table.gallery-list .gallery-list-item')
+            ->reduce(static fn (Crawler $node): bool => $node->filter('.gallery-list-item__name')->count() > 0 && str_contains($node->filter('.gallery-list-item__name')->text(), $name))
+        ;
+    }
+
+    /**
+     * Replaces the controller by one with other metadata fields and, optionally, another page size.
+     *
+     * @param list<string> $fields
+     */
+    private function useController(array $fields, ?int $paginationSize = null): void
+    {
+        $container = static::getContainer();
+        $config = $this->service('joli_media_easy_admin.config', Config::class);
+
+        if (null !== $paginationSize) {
+            $reflection = new \ReflectionClass($config);
+            $parent = $reflection->getParentClass();
+            \assert($parent instanceof \ReflectionClass);
+            $read = static fn (string $name): mixed => $parent->getProperty($name)->getValue($config);
+            $config = new Config(
+                $read('translator'),
+                $read('visibility'),
+                $read('acceptedFiles'),
+                $read('maxFileSize'),
+                $read('maxFiles'),
+                $paginationSize,
+            );
+        }
+
+        $controller = new MediaAdminController(
+            $this->service('joli_media.library_container', LibraryContainer::class),
+            $config,
+            $this->service('joli_media.resolver', Resolver::class),
+            $this->service('joli_media.converter', Converter::class),
+            $this->service('translator', TranslatorInterface::class),
+            $this->service('twig', Environment::class),
+            $this->service('form.factory', FormFactoryInterface::class),
+            $this->service('joli_media_easy_admin.router', MediaAdminRouter::class),
+            $this->service('joli_media_easy_admin.paginator', MediaPaginator::class),
+            $this->service('joli_media_easy_admin.asset.registrar', AssetRegistrar::class),
+            $this->service('security.authorization_checker', AuthorizationCheckerInterface::class),
+            $this->service('joli_media.metadata.provider', MetadataProvider::class),
+            null,
+            $this->service('test.joli_media.metadata.storage', MetadataStorageInterface::class),
+            $fields,
+        );
+        $controller->setContainer($this->service('service_container', ContainerInterface::class));
+        $container->set('joli_media_easy_admin.controller.admin', $controller);
     }
 
     private function findInGalleryFromName(Crawler $crawler, string $name): Crawler

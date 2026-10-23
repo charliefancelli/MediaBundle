@@ -671,7 +671,9 @@ class MediaAdminController extends AbstractController
             'metadata_form' => $metadataEnabled ? $metadataForm?->createView() : null,
             'metadata_path_too_long' => $metadataPathTooLong,
             'metadata_tags' => $metadataTags,
-            'media_tags' => $this->metadataProvider?->get($key, $this->getLibrary()->getName())?->getTags() ?? [],
+            'media_tags' => $this->metadataProvider instanceof MetadataProvider && \in_array('tags', $this->metadataFields, true)
+                ? ($this->metadataProvider->get($key, $this->getLibrary()->getName())?->getTags() ?? [])
+                : [],
             'move_form' => $this->createMoveFileForm($key)->createView(),
             'rename_form' => $renameFileForm->createView(),
         ]));
@@ -793,9 +795,15 @@ class MediaAdminController extends AbstractController
         if ($request->query->get('view_mode')) {
             $request->getSession()->set('view_mode', $request->query->get('view_mode'));
 
+            // the search and the tag filter survive a change of the view mode
+            $keptQuery = array_filter(
+                ['query' => $request->query->getString('query', ''), 'tag' => $request->query->getString('tag', '')],
+                static fn (string $value): bool => '' !== $value,
+            );
+
             return $this->redirect($this->mediaAdminRouter->generateUrl($action, [
                 'key' => $key,
-            ]));
+            ], $keptQuery));
         }
 
         $currentKey = Resolver::normalizePath($key);
@@ -804,8 +812,8 @@ class MediaAdminController extends AbstractController
             path: $currentKey,
         ));
 
-        // the tag filter needs the metadata storage, and is ignored without it
-        $tag = $this->metadataStorage instanceof MetadataStorageInterface && 'chooseDirectory' !== $action
+        // the tag filter needs the metadata storage and the "tags" field, and is ignored without them
+        $tag = $this->metadataStorage instanceof MetadataStorageInterface && \in_array('tags', $this->metadataFields, true) && 'chooseDirectory' !== $action
             ? trim($request->query->getString('tag', ''))
             : '';
         $hasTag = '' !== $tag;
@@ -863,35 +871,25 @@ class MediaAdminController extends AbstractController
             default => 'explore',
         };
 
-        $mediaFilter = null;
-        $mediaSort = null;
-
-        if ($hasSearch) {
-            $mediaFilter = static fn (Media $media): bool => str_contains(strtolower($media->getPath()), strtolower($searchValue));
-        }
-
-        if ($hasTag && $this->metadataStorage instanceof MetadataStorageInterface) {
-            $taggedPaths = array_flip($this->metadataStorage->findPathsByTag($this->getLibrary()->getName(), $tag));
-            $searchFilter = $mediaFilter;
-            $mediaFilter = static fn (Media $media): bool => isset($taggedPaths[$media->getPath()])
-                && (null === $searchFilter || $searchFilter($media));
-        }
-
-        if ($hasSearch || $hasTag) {
-            // recursive listings are not sorted by default and depend on the storage
-            // adapter's traversal order, which would make pagination unstable
-            $mediaSort = static fn (Media $a, Media $b): int => strtolower($a->getPath()) <=> strtolower($b->getPath());
-        }
+        // recursive listings are not sorted by default and depend on the storage
+        // adapter's traversal order, which would make pagination unstable
+        $mediaSort = static fn (Media $a, Media $b): int => strtolower($a->getPath()) <=> strtolower($b->getPath());
 
         try {
-            $paginatedMedias = $this->getOriginalStorage()->listMediasPaginated(
-                $currentKey,
-                recursive: $hasSearch || $hasTag,
-                page: $request->query->getInt('page', 1),
-                perPage: $this->config->getPaginationSize(),
-                filter: $mediaFilter,
-                sort: $mediaSort,
-            );
+            if ($hasTag) {
+                $paginatedMedias = $this->paginateTaggedMedias($tag, $currentKey, $searchValue, $request->query->getInt('page', 1), $mediaSort);
+            } else {
+                $paginatedMedias = $this->getOriginalStorage()->listMediasPaginated(
+                    $currentKey,
+                    recursive: $hasSearch,
+                    page: $request->query->getInt('page', 1),
+                    perPage: $this->config->getPaginationSize(),
+                    filter: $hasSearch
+                        ? static fn (Media $media): bool => str_contains(strtolower($media->getPath()), strtolower($searchValue))
+                        : null,
+                    sort: $hasSearch ? $mediaSort : null,
+                );
+            }
         } catch (\OutOfRangeException) {
             throw new BadRequestException('The requested page number is out of range.');
         }
@@ -925,6 +923,54 @@ class MediaAdminController extends AbstractController
             'search' => $searchValue,
             'tag' => $tag,
         ]));
+    }
+
+    /**
+     * Lists the medias of the library which carry the tag, below the given directory,
+     * without listing the storage: only the tagged paths are looked at.
+     *
+     * @return array{items: array<Media>, total: int, page: int, perPage: int, totalPages: int}
+     */
+    private function paginateTaggedMedias(string $tag, string $currentKey, string $searchValue, int $page, callable $sort): array
+    {
+        $prefix = '' === $currentKey || '.' === $currentKey ? '' : $currentKey . '/';
+        $storage = $this->getOriginalStorage();
+        $medias = [];
+
+        foreach ($this->metadataStorage?->findPathsByTag($this->getLibrary()->getName(), $tag) ?? [] as $path) {
+            if ('' !== $prefix && !str_starts_with($path, $prefix)) {
+                continue;
+            }
+
+            if ('' !== $searchValue && !str_contains(strtolower($path), strtolower($searchValue))) {
+                continue;
+            }
+
+            // the metadata of a file deleted outside of JoliMedia may remain
+            if (!$storage->has($path)) {
+                continue;
+            }
+
+            $medias[] = new Media($path, $storage);
+        }
+
+        usort($medias, $sort);
+
+        $perPage = $this->config->getPaginationSize();
+        $total = \count($medias);
+        $totalPages = max(1, (int) ceil($total / $perPage));
+
+        if ($page < 1 || $page > $totalPages) {
+            throw new \OutOfRangeException('The requested page number is out of range.');
+        }
+
+        return [
+            'items' => \array_slice($medias, ($page - 1) * $perPage, $perPage),
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $perPage,
+            'totalPages' => $totalPages,
+        ];
     }
 
     private function createDeleteForm(?string $path = null): FormInterface

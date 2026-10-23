@@ -138,12 +138,13 @@
             {% block content_header %}
                 <div class="content-header-title">
                     {% set current_view_mode = app.session.get('view_mode', 'grid') %}
+                    {% set kept_query = (search != '' ? { query: search } : { })|merge(tag is defined and tag != '' ? { tag: tag } : { }) %}
                     <div class="joli-media-view-switch" role="group" aria-label="{{ 'view.label'|trans }}">
                         <twig:ea:Button
                             htmlElement="a"
                             size="sm"
                             icon="fa fa-list"
-                            href="{{ joli_media_admin_url(action, { key: current_key }, { view_mode: 'list' }) }}"
+                            href="{{ joli_media_admin_url(action, { key: current_key }, { view_mode: 'list' }|merge(kept_query)) }}"
                             class="{{ 'list' == current_view_mode ? 'active disabled' }}"
                             aria-current="{{ 'list' == current_view_mode ? 'true' : 'false' }}"
                         >{{ 'view.list'|trans(domain: 'JoliMediaEasyAdminBundle') }}</twig:ea:Button>
@@ -151,7 +152,7 @@
                             htmlElement="a"
                             size="sm"
                             icon="fa fa-th-large"
-                            href="{{ joli_media_admin_url(action, { key: current_key }, { view_mode: 'grid' }) }}"
+                            href="{{ joli_media_admin_url(action, { key: current_key }, { view_mode: 'grid' }|merge(kept_query)) }}"
                             class="{{ 'grid' == current_view_mode ? 'active disabled' }}"
                             aria-current="{{ 'grid' == current_view_mode ? 'true' : 'false' }}"
                         >{{ 'view.grid'|trans(domain: 'JoliMediaEasyAdminBundle') }}</twig:ea:Button>
@@ -216,6 +217,7 @@
         {% if base_template ends with '/choose.html.twig' %}
             <div class="search-container" data-component="search-container">
                 <form data-component="media-search" method="get" action="{{ joli_media_admin_url(action, '.' != current_key ? { key: current_key } : { }) }}">
+                    {% if tag is defined and tag != '' %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
                     <input type="search" name="query" class="form-control" data-component="media-search-input" placeholder="{{ 'media.search_label'|trans }}" value="{{ search }}" autocomplete="off">
                     <twig:ea:Button type="submit" variant="primary" class="joli-media-search-btn">{{ 'action.search'|trans(domain: 'JoliMediaEasyAdminBundle') }}</twig:ea:Button>
                 </form>
