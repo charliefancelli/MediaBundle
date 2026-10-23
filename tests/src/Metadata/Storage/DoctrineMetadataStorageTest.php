@@ -473,7 +473,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
 
     public function testAFailedFlushDetachesTheStoredInstance(): void
     {
-        $this->store('default', 'a.png', 'A');
+        $this->store('default', 'a.png', 'A', ['one', 'two']);
         $managed = $this->storage->get('default', 'a.png');
         $this->assertNotNull($managed);
 
@@ -485,8 +485,10 @@ class DoctrineMetadataStorageTest extends WebTestCase
         };
         $this->entityManager->getEventManager()->addEventListener(Events::onFlush, $listener);
 
+        // "one" is scheduled for an orphan removal, "three" for an insertion
         $new = new MediaMetadata('default', 'a.png');
         $new->setAlt('Not saved');
+        $new->setTags(['two', 'three']);
 
         try {
             $this->storage->save($new);
@@ -498,7 +500,29 @@ class DoctrineMetadataStorageTest extends WebTestCase
         }
 
         $this->assertFalse($this->entityManager->contains($managed));
+
+        // nothing unsaved is left pending in the entity manager
+        $this->entityManager->flush();
+
+        $connection = $this->entityManager->getConnection();
+        $this->assertSame('A', $connection->fetchOne('SELECT alt FROM joli_media_metadata WHERE path = ?', ['a.png']));
+        $this->assertSame(['one', 'two'], $connection->fetchFirstColumn('SELECT name FROM joli_media_metadata_tag ORDER BY position'));
         $this->assertSame('A', $this->storage->get('default', 'a.png')?->getAlt());
+
+        // a failed deletion leaves nothing scheduled either
+        $this->entityManager->getEventManager()->addEventListener(Events::onFlush, $listener);
+
+        try {
+            $this->storage->save(new MediaMetadata('default', 'a.png'));
+            $this->fail('An exception was expected.');
+        } catch (\RuntimeException) {
+        } finally {
+            $this->entityManager->getEventManager()->removeEventListener(Events::onFlush, $listener);
+        }
+
+        $this->entityManager->flush();
+        $this->assertSame(1, $this->countRows());
+        $this->assertSame(2, $this->countTags());
     }
 
     public function testGetManyReadsLongListsInChunks(): void

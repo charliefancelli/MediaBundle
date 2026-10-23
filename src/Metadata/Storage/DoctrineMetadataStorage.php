@@ -288,9 +288,47 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
             $schedule();
             $entityManager->flush();
         } catch (\Throwable $throwable) {
-            $this->detach($entityManager, static fn (MediaMetadata $managed): bool => $managed === $metadata);
+            $this->forgetPendingChanges($entityManager, $metadata);
 
             throw $throwable;
+        }
+    }
+
+    /**
+     * After a failed flush, nothing of the metadata may stay scheduled: its new tags would be inserted and its
+     * removed tags deleted by the next flush of the entity manager.
+     */
+    private function forgetPendingChanges(EntityManagerInterface $entityManager, MediaMetadata $metadata): void
+    {
+        $unitOfWork = $entityManager->getUnitOfWork();
+        // first, while its tags are still managed: persisting it again cascades to them
+        $this->cancelRemoval($entityManager, $metadata);
+        $identityMap = $unitOfWork->getIdentityMap();
+
+        // the stored tags (kept or orphaned by setTags()), and the new ones scheduled for an insertion
+        foreach ([...array_values($identityMap[MediaMetadataTag::class] ?? []), ...array_values($unitOfWork->getScheduledEntityInsertions())] as $tag) {
+            if ($tag instanceof MediaMetadataTag && $tag->getMetadata() === $metadata) {
+                $unitOfWork->cancelOrphanRemoval($tag);
+                $this->cancelRemoval($entityManager, $tag);
+                $entityManager->detach($tag);
+            }
+        }
+
+        $this->detach($entityManager, static fn (MediaMetadata $managed): bool => $managed === $metadata);
+
+        if ($unitOfWork->isScheduledForInsert($metadata)) {
+            // a new metadata is not in the identity map yet
+            $entityManager->detach($metadata);
+        }
+    }
+
+    /**
+     * A removed entity cannot be detached: persisting it again cancels its removal.
+     */
+    private function cancelRemoval(EntityManagerInterface $entityManager, object $entity): void
+    {
+        if ($entityManager->getUnitOfWork()->isScheduledForDelete($entity)) {
+            $entityManager->persist($entity);
         }
     }
 
