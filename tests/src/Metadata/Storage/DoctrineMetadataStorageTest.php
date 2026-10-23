@@ -380,6 +380,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         QueryCounterMiddleware::reset();
         $this->storage->move('default', 'A.png', 'a.png');
         $this->storage->moveFolder('default', 'Photos', 'photos');
+
         $deletes = array_values(array_filter(
             QueryCounterMiddleware::getQueries(),
             static fn (string $sql): bool => str_starts_with(ltrim($sql), 'DELETE FROM joli_media_metadata '),
@@ -452,6 +453,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $new = new MediaMetadata('default', 'a.png');
         $new->setCaption('Caption');
         $new->setTags(['two', 'three']);
+
         $this->storage->save($new);
 
         $this->entityManager->clear();
@@ -476,7 +478,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $this->assertNotNull($managed);
 
         $listener = new class {
-            public function onFlush(): void
+            public function onFlush(): never
             {
                 throw new \RuntimeException('The database is down.');
             }
@@ -489,8 +491,8 @@ class DoctrineMetadataStorageTest extends WebTestCase
         try {
             $this->storage->save($new);
             $this->fail('An exception was expected.');
-        } catch (\RuntimeException $e) {
-            $this->assertSame('The database is down.', $e->getMessage());
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('The database is down.', $runtimeException->getMessage());
         } finally {
             $this->entityManager->getEventManager()->removeEventListener(Events::onFlush, $listener);
         }
@@ -507,6 +509,7 @@ class DoctrineMetadataStorageTest extends WebTestCase
         for ($i = 0; $i < DoctrineMetadataStorage::GET_MANY_CHUNK_SIZE; ++$i) {
             $paths[] = 'missing-' . $i . '.png';
         }
+
         $paths[] = 'z.png';
         $this->entityManager->clear();
 

@@ -45,6 +45,7 @@ class MetadataDisabledApplicationTest extends WebTestCase
         foreach (['provider', 'manager', 'storage', 'storage.doctrine', 'event_listener.follow'] as $id) {
             $this->assertFalse($container->has('joli_media.metadata.' . $id), $id);
         }
+
         $this->assertSame([], array_values(array_filter(
             $container->getServiceIds(),
             static fn (string $id): bool => str_starts_with($id, 'joli_media.metadata.'),

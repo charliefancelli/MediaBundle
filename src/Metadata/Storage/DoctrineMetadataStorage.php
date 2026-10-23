@@ -287,10 +287,10 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
         try {
             $schedule();
             $entityManager->flush();
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             $this->detach($entityManager, static fn (MediaMetadata $managed): bool => $managed === $metadata);
 
-            throw $e;
+            throw $throwable;
         }
     }
 
