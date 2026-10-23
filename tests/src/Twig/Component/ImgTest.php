@@ -5,11 +5,17 @@ namespace JoliCode\MediaBundle\Tests\Twig\Component;
 use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Conversion\Converter;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\NullMedia;
+use JoliCode\MediaBundle\Resolver\Resolver;
+use JoliCode\MediaBundle\Srcset\SrcsetBuilder;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\BaseTestCase;
+use JoliCode\MediaBundle\Transformation\DimensionPredictor;
 use JoliCode\MediaBundle\Twig\Components\Img;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DomCrawler\Crawler;
@@ -95,6 +101,15 @@ class ImgTest extends BaseTestCase
         $library = $libraries->get('auto_generate');
         $library->getOriginalStorage()->delete(self::PARTIALLY_STORED_MEDIA);
         $library->deleteAllVariations(self::PARTIALLY_STORED_MEDIA);
+    }
+
+    protected function tearDown(): void
+    {
+        /** @var MetadataStorageInterface $storage */
+        $storage = static::getContainer()->get('test.joli_media.metadata.storage');
+        $storage->delete('default', self::COMPLETELY_STORED_MEDIA);
+
+        parent::tearDown();
     }
 
     /**
@@ -389,8 +404,94 @@ class ImgTest extends BaseTestCase
         }
     }
 
+    public function testStoredAltIsUsedWhenNoneIsGiven(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        self::assertStringContainsString(
+            'loading="lazy" decoding="async" alt="A circle pattern"',
+            $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']),
+        );
+    }
+
+    public function testStoredAltIsUsedForAMediaObject(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        /** @var LibraryContainer $libraries */
+        $libraries = static::getContainer()->get('joli_media.library_container');
+        $media = new Media(self::COMPLETELY_STORED_MEDIA, $libraries->getDefault()->getOriginalStorage());
+
+        self::assertStringContainsString(
+            'alt="A circle pattern"',
+            $this->renderImg(['media' => $media, 'variation' => 'variation-standard']),
+        );
+    }
+
+    public function testExplicitAltWins(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $html = $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard', 'alt' => 'Given']);
+
+        self::assertStringContainsString('loading="lazy" decoding="async" alt="Given"', $html);
+        self::assertStringNotContainsString('A circle pattern', $html);
+    }
+
+    public function testEmptyAltIsKeptForDecorativeImages(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $html = $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard', 'alt' => '']);
+
+        self::assertStringContainsString('loading="lazy" decoding="async" alt=""', $html);
+        self::assertStringNotContainsString('A circle pattern', $html);
+    }
+
+    public function testNoAltAttributeWithoutMetadata(): void
+    {
+        $html = $this->renderImg(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']);
+
+        self::assertStringNotContainsString('alt=', $html);
+    }
+
+    public function testPreMountWorksWithoutMetadataProvider(): void
+    {
+        $container = static::getContainer();
+        /** @var Resolver $resolver */
+        $resolver = $container->get('joli_media.resolver');
+        /** @var LibraryContainer $libraries */
+        $libraries = $container->get('joli_media.library_container');
+        /** @var SrcsetBuilder $srcsetBuilder */
+        $srcsetBuilder = $container->get('joli_media.srcset_builder');
+        /** @var DimensionPredictor $dimensionPredictor */
+        $dimensionPredictor = $container->get('joli_media.dimension_predictor');
+        $img = new Img($resolver, $libraries, $srcsetBuilder, $dimensionPredictor);
+
+        self::assertSame(['path' => 'a.jpg'], $img->preMount(['path' => 'a.jpg', 'alt' => null]));
+        self::assertSame(['path' => 'a.jpg', 'alt' => ''], $img->preMount(['path' => 'a.jpg', 'alt' => '']));
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function renderImg(array $data): string
+    {
+        // the raw output: a DOM serialization may turn alt="" into a bare alt
+        return (string) preg_replace(['/(\n\s*)+/', '/\s+/'], ['', ' '], $this->renderTwigComponent(name: Img::class, data: $data));
+    }
+
+    private function saveAlt(string $alt): void
+    {
+        /** @var MetadataManager $manager */
+        $manager = static::getContainer()->get('joli_media.metadata.manager');
+        $metadata = new MediaMetadata('default', self::COMPLETELY_STORED_MEDIA);
+        $metadata->setAlt($alt);
+        $manager->save($metadata);
     }
 }

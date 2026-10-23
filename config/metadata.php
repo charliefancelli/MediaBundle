@@ -44,8 +44,9 @@ return static function (ContainerConfigurator $container): void {
         ->alias(MetadataManager::class, 'joli_media.metadata.manager')
     ;
 
-    // the Twig filters read the metadata
+    // the Twig filters and the Img component read the metadata
     $services->get('joli_media.twig_extension')->arg('$metadataProvider', service('joli_media.metadata.provider'));
+    $services->get('joli_media.twig.component.img')->arg('$metadataProvider', service('joli_media.metadata.provider'));
 
     // the listeners below move and delete the metadata along with their media...
     foreach (['media_move', 'folder_move', 'media_delete', 'folder_delete'] as $listener) {

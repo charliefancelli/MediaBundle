@@ -5,6 +5,9 @@ namespace JoliCode\MediaBundle\Tests\Twig\Component;
 use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Conversion\Converter;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataManager;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Format;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
@@ -94,6 +97,15 @@ class PictureTest extends WebTestCase
         $library = $libraries->get('auto_generate');
         $library->getOriginalStorage()->delete(self::PARTIALLY_STORED_MEDIA);
         $library->deleteAllVariations(self::PARTIALLY_STORED_MEDIA);
+    }
+
+    protected function tearDown(): void
+    {
+        /** @var MetadataStorageInterface $storage */
+        $storage = static::getContainer()->get('test.joli_media.metadata.storage');
+        $storage->delete('default', self::COMPLETELY_STORED_MEDIA);
+
+        parent::tearDown();
     }
 
     /**
@@ -321,8 +333,57 @@ class PictureTest extends WebTestCase
         ];
     }
 
+    public function testStoredAltReachesTheImg(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        foreach (['variation-standard', 'variation-large'] as $variation) {
+            self::assertStringContainsString(
+                'alt="A circle pattern"',
+                $this->renderPicture(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => $variation]),
+            );
+        }
+    }
+
+    public function testPictureExplicitAltWins(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $html = $this->renderPicture(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard', 'alt' => 'Given']);
+
+        self::assertStringContainsString('alt="Given"', $html);
+        self::assertStringNotContainsString('A circle pattern', $html);
+    }
+
+    public function testPictureExplicitEmptyAltWins(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $html = $this->renderPicture(['path' => self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard', 'alt' => '']);
+
+        self::assertStringContainsString('alt=""', $html);
+        self::assertStringNotContainsString('A circle pattern', $html);
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function renderPicture(array $data): string
+    {
+        return $this->renderTwigComponent(name: Picture::class, data: $data);
+    }
+
+    private function saveAlt(string $alt): void
+    {
+        /** @var MetadataManager $manager */
+        $manager = static::getContainer()->get('joli_media.metadata.manager');
+        $metadata = new MediaMetadata('default', self::COMPLETELY_STORED_MEDIA);
+        $metadata->setAlt($alt);
+        $manager->save($metadata);
     }
 }

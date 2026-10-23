@@ -4,6 +4,7 @@ namespace JoliCode\MediaBundle\Twig\Components;
 
 use JoliCode\MediaBundle\Exception\MediaNotFoundException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Model\NullMedia;
@@ -15,6 +16,7 @@ use JoliCode\MediaBundle\Variation\Variation;
 use League\Flysystem\UnableToReadFile;
 use Psr\Log\LoggerInterface;
 use Symfony\UX\TwigComponent\Attribute\AsTwigComponent;
+use Symfony\UX\TwigComponent\Attribute\PreMount;
 
 #[AsTwigComponent(
     template: '@JoliMediaBundle/templates/components/Img.html.twig',
@@ -48,8 +50,44 @@ class Img
         private readonly SrcsetBuilder $srcsetBuilder,
         private readonly DimensionPredictor $dimensionPredictor,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?MetadataProvider $metadataProvider = null,
     ) {
         $this->srcset = new Srcset();
+    }
+
+    /**
+     * Falls back to the stored alt text when none is given. The alt stays a regular
+     * HTML attribute: an explicit one (even an empty one, for a decorative image) is
+     * left untouched and so is its position among the other attributes.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    #[PreMount]
+    public function preMount(array $data): array
+    {
+        // the Picture component always passes its "alt", null when it was not given: this is "not provided"
+        if (\array_key_exists('alt', $data) && null === $data['alt']) {
+            unset($data['alt']);
+        }
+
+        if (\array_key_exists('alt', $data) || null === $this->metadataProvider) {
+            return $data;
+        }
+
+        $media = $data['media'] ?? $data['path'] ?? null;
+
+        if ($media instanceof Media || \is_string($media)) {
+            $library = \is_string($data['library'] ?? null) ? $data['library'] : null;
+            $alt = $this->metadataProvider->get($media, $library)?->getAlt();
+
+            if (null !== $alt) {
+                $data['alt'] = $alt;
+            }
+        }
+
+        return $data;
     }
 
     /**
