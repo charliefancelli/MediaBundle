@@ -204,7 +204,7 @@ Saving a ``MediaMetadata`` with every field empty deletes its row (saving an emp
 
     With the Doctrine storage, ``MetadataManager::save()`` flushes the whole entity manager, not only the metadata: everything that is pending in it is written too.
 
-Once the metadata are saved, the ``MediaEvents::POST_SAVE_METADATA`` event (``joli.media.post_save_metadata``) is dispatched with a ``PostSaveMetadataEvent``, giving the saved ``metadata`` and whether a stored row was ``deleted`` (``false`` for an empty ``MediaMetadata`` which was never stored). Use it, for example, to purge an HTTP cache - see the `events documentation <events.rst>`_. It is only dispatched by ``MetadataManager::save()``: a move or a deletion of a media dispatches the ``POST_MOVE_*`` and ``POST_DELETE_*`` events, as always.
+Once the metadata are saved, the ``MediaEvents::POST_SAVE_METADATA`` event (``joli.media.post_save_metadata``) is dispatched with a ``PostSaveMetadataEvent``, giving the ``metadata`` passed to ``save()`` and whether a stored row was ``deleted`` (``false`` for an empty ``MediaMetadata`` which was never stored, or whose row is already gone). The ``metadata`` is the given instance, not always the stored one: the EasyAdmin bridge saves an unmanaged copy, whose ``getId()`` is ``null``. Use it, for example, to purge an HTTP cache - see the `events documentation <events.rst>`_. It is only dispatched by ``MetadataManager::save()``: a move or a deletion of a media dispatches the ``POST_MOVE_*`` and ``POST_DELETE_*`` events, as always.
 
 Moves and Deletions
 -------------------

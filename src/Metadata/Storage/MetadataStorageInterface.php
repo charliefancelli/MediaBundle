@@ -24,6 +24,9 @@ interface MetadataStorageInterface
      * An instance which is not the stored one (a copy, a detached instance, or a new instance for a library and a path
      * which already have a row) is merged onto the stored row: its values replace the stored ones, and an empty one
      * deletes the row. An empty instance which matches no row is ignored.
+     *
+     * A non-empty instance which matches no row (its row was deleted since it was read, for instance) is stored again,
+     * with its values: save() stores what it is given.
      */
     public function save(MediaMetadata $metadata): void;
 

@@ -76,6 +76,18 @@ class MetadataManagerTest extends BaseTestCase
         self::assertFalse($this->events[0]->deleted);
     }
 
+    public function testSavingAnEmptyInstanceWhoseRowIsGoneIsNotADeletion(): void
+    {
+        // an instance once stored (it has an id), whose row was deleted since
+        $metadata = new MediaMetadata('default', 'gone.png');
+        (new \ReflectionProperty(MediaMetadata::class, 'id'))->setValue($metadata, 42);
+
+        $this->manager->save($metadata);
+
+        self::assertCount(1, $this->events);
+        self::assertFalse($this->events[0]->deleted);
+    }
+
     public function testSavingAnEmptyCopyOfStoredMetadataIsADeletion(): void
     {
         $this->storage->put('default', 'a.png', 'An alt');

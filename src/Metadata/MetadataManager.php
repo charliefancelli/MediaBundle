@@ -25,9 +25,8 @@ readonly class MetadataManager
 
     public function save(MediaMetadata $metadata): void
     {
-        // a row is deleted only when the metadata were stored: they have an id, or a row exists at their path
-        $deleted = $metadata->isEmpty()
-            && (null !== $metadata->getId() || $this->storage->get($metadata->getLibrary(), $metadata->getPath()) instanceof MediaMetadata);
+        // a row is deleted only when one is stored at the library and path of the metadata
+        $deleted = $metadata->isEmpty() && $this->storage->get($metadata->getLibrary(), $metadata->getPath()) instanceof MediaMetadata;
 
         try {
             $this->storage->save($metadata);
