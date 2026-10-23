@@ -4,6 +4,7 @@ namespace JoliCode\MediaBundle\Tests\Twig\Component;
 
 use JoliCode\MediaBundle\Binary\Binary;
 use JoliCode\MediaBundle\Conversion\Converter;
+use JoliCode\MediaBundle\Event\MediaEvents;
 use JoliCode\MediaBundle\Library\LibraryContainer;
 use JoliCode\MediaBundle\Metadata\MetadataManager;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
@@ -19,6 +20,7 @@ use JoliCode\MediaBundle\Transformation\DimensionPredictor;
 use JoliCode\MediaBundle\Twig\Components\Img;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\UX\TwigComponent\Test\InteractsWithTwigComponents;
 
 class ImgTest extends BaseTestCase
@@ -482,6 +484,29 @@ class ImgTest extends BaseTestCase
             'alt="A circle pattern"',
             $this->renderImg(['path' => '/media/original/' . self::COMPLETELY_STORED_MEDIA, 'variation' => 'variation-standard']),
         );
+    }
+
+    public function testPreMountDoesNotTouchTheStorage(): void
+    {
+        $this->saveAlt('A circle pattern');
+
+        $container = static::getContainer();
+        /** @var EventDispatcherInterface $dispatcher */
+        $dispatcher = $container->get('event_dispatcher');
+        $resolutions = 0;
+        $dispatcher->addListener(MediaEvents::PRE_RESOLVE_MEDIA, static function () use (&$resolutions): void {
+            ++$resolutions;
+        });
+        /** @var Img $img */
+        $img = $container->get('joli_media.twig.component.img');
+
+        foreach (['/media/original/' . self::COMPLETELY_STORED_MEDIA, self::COMPLETELY_STORED_MEDIA, 'missing.jpg'] as $path) {
+            $img->preMount(['path' => $path]);
+            $img->preMount(['path' => $path, 'library' => 'default']);
+        }
+
+        self::assertSame(['path' => '/media/original/' . self::COMPLETELY_STORED_MEDIA, 'alt' => 'A circle pattern'], $img->preMount(['path' => '/media/original/' . self::COMPLETELY_STORED_MEDIA]));
+        self::assertSame(0, $resolutions);
     }
 
     public function testStoredAltIsEscaped(): void

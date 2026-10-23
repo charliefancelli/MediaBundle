@@ -89,11 +89,7 @@ class Img
         $media = $data['media'] ?? $data['path'] ?? null;
 
         if (\is_string($media)) {
-            try {
-                // the same resolution as mount(): the path may carry the URL prefix of the library
-                $media = $this->resolver->resolveMedia($media, $library);
-            } catch (MediaNotFoundException) {
-            }
+            $media = $this->stripUrlPath($media, $library);
         }
 
         if ($media instanceof Media || \is_string($media)) {
@@ -273,6 +269,28 @@ class Img
             $this->srcset = new Srcset();
             $this->sizes = $sizes;
         }
+    }
+
+    /**
+     * The path may carry the URL path of the library ("/media/original/a.jpg"), as mount()
+     * accepts it: it is removed as text, the storage is not queried (mount() does it). A
+     * path really starting with the URL path of its library is ambiguous, and read stripped.
+     */
+    private function stripUrlPath(string $path, ?string $library): string
+    {
+        $path = Resolver::normalizePath($path);
+
+        if (null !== $library && !$this->libraries->has($library)) {
+            return $path;
+        }
+
+        $urlPath = Resolver::normalizePath($this->libraries->get($library)->getOriginalStorage()->getUrlPath());
+
+        if ('' !== $urlPath && str_starts_with($path, $urlPath . '/')) {
+            return substr($path, \strlen($urlPath) + 1);
+        }
+
+        return $path;
     }
 
     /**
