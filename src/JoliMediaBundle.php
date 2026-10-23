@@ -57,6 +57,9 @@ class JoliMediaBundle extends AbstractBundle
         // before the Doctrine check below
         Media::$libraryContainerInitializer = fn (): ?object => $this->container->get('joli_media.library_container');
         MediaVariation::$converterInitializer = fn (): ?object => $this->container->get('joli_media.converter');
+        Media::$metadataProviderInitializer = $this->container->has('joli_media.metadata.provider')
+            ? fn (): ?object => $this->container->get('joli_media.metadata.provider')
+            : null;
 
         if (!class_exists(StringType::class)) {
             return;
