@@ -4,6 +4,7 @@ namespace JoliCode\MediaBundle\Tests\DependencyInjection;
 
 use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
 use JoliCode\MediaBundle\JoliMediaBundle;
+use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
@@ -48,6 +49,18 @@ class MetadataDisabledTest extends TestCase
 
         $this->assertTrue($container->getParameter('joli_media.metadata.enabled'));
         $this->assertFalse($container->hasParameter('joli_media.metadata.doctrine_mapping'));
+        $this->assertFalse($container->hasDefinition('joli_media.metadata.storage.doctrine'));
+        $this->assertSame('app.metadata_storage', (string) $container->getAlias('joli_media.metadata.storage'));
+        $this->assertSame('joli_media.metadata.storage', (string) $container->getAlias(MetadataStorageInterface::class));
+    }
+
+    public function testTheDoctrineStorageIsTheDefaultOne(): void
+    {
+        $container = $this->createContainer(['enabled' => true]);
+
+        $this->assertTrue($container->hasDefinition('joli_media.metadata.storage.doctrine'));
+        $this->assertSame('joli_media.metadata.storage.doctrine', (string) $container->getAlias('joli_media.metadata.storage'));
+        $this->assertSame('joli_media.metadata.storage', (string) $container->getAlias(MetadataStorageInterface::class));
     }
 
     /**

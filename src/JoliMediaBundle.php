@@ -152,6 +152,12 @@ class JoliMediaBundle extends AbstractBundle
 
         if ($metadataEnabled) {
             $container->import('../config/metadata.php');
+
+            // a custom storage replaces the Doctrine one
+            if (!$metadataDoctrineMapping) {
+                $builder->removeDefinition('joli_media.metadata.storage.doctrine');
+                $builder->setAlias('joli_media.metadata.storage', $config['metadata']['storage']);
+            }
         }
 
         $this->imagineProcessorEnabled = isset($config['processors']['imagine']) && $config['processors']['imagine']['options']['enabled'];
