@@ -2,6 +2,8 @@
 
 namespace JoliCode\MediaBundle\Twig;
 
+use JoliCode\MediaBundle\Metadata\MetadataProvider;
+use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Model\MediaVariation;
 use JoliCode\MediaBundle\Model\Srcset;
@@ -16,6 +18,7 @@ class JoliMediaExtension extends AbstractExtension
     public function __construct(
         private readonly Resolver $resolver,
         private readonly SrcsetBuilder $srcsetBuilder,
+        private readonly ?MetadataProvider $metadataProvider = null,
     ) {
     }
 
@@ -27,7 +30,52 @@ class JoliMediaExtension extends AbstractExtension
             new TwigFilter('joli_media_url', $this->getUrl(...)),
             new TwigFilter('joli_media_absolute_url', $this->getAbsoluteUrl(...)),
             new TwigFilter('joli_media_srcset', $this->getSrcset(...)),
+            new TwigFilter('joli_media_alt', $this->getAlt(...)),
+            new TwigFilter('joli_media_caption', $this->getCaption(...)),
+            new TwigFilter('joli_media_copyright', $this->getCopyright(...)),
+            new TwigFilter('joli_media_tags', $this->getTags(...)),
+            new TwigFilter('joli_media_metadata', $this->getMetadata(...)),
         ];
+    }
+
+    private function getAlt(
+        string|Media|MediaVariation $media,
+        ?string $fallback = null,
+        ?string $libraryName = null,
+    ): ?string {
+        return $this->getMetadata($media, $libraryName)?->getAlt() ?? $fallback;
+    }
+
+    private function getCaption(
+        string|Media|MediaVariation $media,
+        ?string $fallback = null,
+        ?string $libraryName = null,
+    ): ?string {
+        return $this->getMetadata($media, $libraryName)?->getCaption() ?? $fallback;
+    }
+
+    private function getCopyright(
+        string|Media|MediaVariation $media,
+        ?string $libraryName = null,
+    ): ?string {
+        return $this->getMetadata($media, $libraryName)?->getCopyright();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function getTags(
+        string|Media|MediaVariation $media,
+        ?string $libraryName = null,
+    ): array {
+        return $this->getMetadata($media, $libraryName)?->getTags() ?? [];
+    }
+
+    private function getMetadata(
+        string|Media|MediaVariation $media,
+        ?string $libraryName = null,
+    ): ?MediaMetadata {
+        return $this->metadataProvider?->get($media, $libraryName);
     }
 
     /**
