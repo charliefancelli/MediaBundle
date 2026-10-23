@@ -1,7 +1,7 @@
 Finding Where a Media Is Used
 =============================
 
-JoliMedia can tell where a media is used in your application. The ``MediaUsageFinder`` service lists the Doctrine entities whose `media columns <using-in-doctrine-entities.rst>`_ hold the media, along with the places declared by your own `usage providers`_. The list is used by the admin bridges to show the usages of a media, and to explain why a deletion has been refused.
+JoliMedia can tell where a media is used in your application. The ``MediaUsageFinder`` service lists the Doctrine entities whose `media columns <using-in-doctrine-entities.rst>`_ hold the media, along with the places declared by your own `usage providers`_. The list is used by the EasyAdmin bridge to show the usages of a media, and to explain why a deletion has been refused.
 
 This feature does not depend on anything else: it works with or without the media metadata feature, and with any admin bridge (or none at all).
 
@@ -98,7 +98,7 @@ With the default autoconfiguration, nothing more is needed: the services impleme
         App\Media\BlockUsageProvider:
             tags: ['joli_media.media_usage_provider']
 
-Only the ``label`` is required. The ``entityClass`` and the ``identifier`` allow the admin bridges to link the usage to the edit page of the entity (see `MediaUsageUrlGeneratorInterface`_), and ``field`` names the place where the media is stored. A provider is called every time the usages of a media are looked up, including when a media is deleted: keep it fast, and query only what the path needs.
+Only the ``label`` is required. The ``entityClass`` and the ``identifier`` allow the EasyAdmin bridge to link the usage to the edit page of the entity (see `MediaUsageUrlGeneratorInterface`_), and ``field`` names the place where the media is stored. A provider is called every time the usages of a media are looked up, including when a media is deleted: keep it fast, and query only what the path needs.
 
 Preventing the deletion of a used media
 ---------------------------------------
@@ -132,4 +132,4 @@ A provider can also set the ``editUrl`` of its usages itself, it is then left un
 Usages in the admin bridges
 ---------------------------
 
-The `EasyAdmin bridge <../bridges/easy-admin.rst#usages-of-a-media>`_ displays the usages of a media and the reasons of a refused deletion. The Sonata and Sylius bridges do not use the usage finder yet: a deletion refused because of a provider shows a generic message there.
+The `EasyAdmin bridge <../bridges/easy-admin.rst#usages-of-a-media>`_ displays the usages of a media and the reasons of a refused deletion. The Sonata and Sylius bridges do not use the usage finder yet: their controllers do not list the usages. The Sonata bridge always shows its field-based message, so a refused deletion caused by a provider usage without a field reads ``used in the "" field of the "..." entity`` there.
