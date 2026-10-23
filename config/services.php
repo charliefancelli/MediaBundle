@@ -58,6 +58,7 @@ use JoliCode\MediaBundle\Twig\Components\Img;
 use JoliCode\MediaBundle\Twig\Components\Picture;
 use JoliCode\MediaBundle\Twig\Components\Source;
 use JoliCode\MediaBundle\Twig\JoliMediaExtension;
+use JoliCode\MediaBundle\Usage\EventListener\UsageDeleteGuardListener;
 use JoliCode\MediaBundle\Usage\MediaUsageFinder;
 use JoliCode\MediaBundle\Validator\MediaValidator;
 use JoliCode\MediaBundle\Variation\Variation;
@@ -238,6 +239,19 @@ return static function (ContainerConfigurator $container): void {
             null,
         ])
         ->alias(MediaUsageFinder::class, 'joli_media.usage_finder')
+        // not removed by DoctrinePass: it works without DoctrineBundle
+        ->set('joli_media.event_listener.usage_delete_guard', UsageDeleteGuardListener::class)
+        ->args([
+            tagged_iterator('joli_media.media_usage_provider'),
+        ])
+        ->tag('kernel.event_listener', [
+            'event' => MediaEvents::PRE_DELETE_MEDIA,
+            'method' => 'onMediaPreDelete',
+        ])
+        ->tag('kernel.event_listener', [
+            'event' => MediaEvents::PRE_DELETE_FOLDER,
+            'method' => 'onFolderPreDelete',
+        ])
 
         // library
         ->set('joli_media.library_container', LibraryContainer::class)
