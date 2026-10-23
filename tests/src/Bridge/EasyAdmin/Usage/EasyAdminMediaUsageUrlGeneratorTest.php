@@ -88,6 +88,7 @@ class EasyAdminMediaUsageUrlGeneratorTest extends WebTestCase
     {
         $metadata = new ClassMetadata(Page::class);
         $metadata->identifier = ['first', 'second'];
+
         $manager = $this->createStub(ObjectManager::class);
         $manager->method('getClassMetadata')->willReturn($metadata);
         $doctrine = $this->createStub(ManagerRegistry::class);

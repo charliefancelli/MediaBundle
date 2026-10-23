@@ -3,6 +3,7 @@
 namespace JoliCode\MediaBundle\Bridge\EasyAdmin\Usage;
 
 use Doctrine\Persistence\ManagerRegistry;
+use Doctrine\Persistence\ObjectManager;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Action;
 use EasyCorp\Bundle\EasyAdminBundle\Router\AdminUrlGenerator;
 use JoliCode\MediaBundle\Usage\MediaUsage;
@@ -66,7 +67,7 @@ readonly class EasyAdminMediaUsageUrlGenerator implements MediaUsageUrlGenerator
     {
         $manager = $this->doctrine?->getManagerForClass($entityClass);
 
-        return null !== $manager && \count($manager->getClassMetadata($entityClass)->getIdentifierFieldNames()) > 1;
+        return $manager instanceof ObjectManager && \count($manager->getClassMetadata($entityClass)->getIdentifierFieldNames()) > 1;
     }
 
     /**

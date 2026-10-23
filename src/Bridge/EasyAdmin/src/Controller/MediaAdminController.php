@@ -193,7 +193,7 @@ class MediaAdminController extends AbstractController
 
                 return $this->redirect($this->mediaAdminRouter->generateUrl(
                     'show',
-                    ['key' => $key] + (null !== $this->usageFinder ? ['_tab' => self::USAGES_TAB] : []),
+                    ['key' => $key] + ($this->usageFinder instanceof MediaUsageFinder ? ['_tab' => self::USAGES_TAB] : []),
                 ));
             }
 
@@ -564,11 +564,11 @@ class MediaAdminController extends AbstractController
             }
         }
 
-        $hasVariationsTab = $this->config->isVisible('show_variations_list') && \count($media->getVariations()) > 0;
+        $hasVariationsTab = $this->config->isVisible('show_variations_list') && [] !== $media->getVariations();
         $displayedTab = match (true) {
             2 === $displayedTab && $hasVariationsTab => 2,
             // the third tab is reserved for the metadata
-            self::USAGES_TAB === $displayedTab && null !== $this->usageFinder => self::USAGES_TAB,
+            self::USAGES_TAB === $displayedTab && $this->usageFinder instanceof MediaUsageFinder => self::USAGES_TAB,
             default => 1,
         };
 

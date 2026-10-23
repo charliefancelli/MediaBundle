@@ -77,7 +77,7 @@ class MediaAdminControllerTest extends WebTestCase
     public function testUsagesTabListsTheUsages(): void
     {
         StaticMediaUsageProvider::setUsages('default', 'restrict.pdf', [
-            new MediaUsage('Footer <b>block</b>', field: 'content', blocksDeletion: true, editUrl: '/blocks/12/edit?a=1&b=2'),
+            new MediaUsage('Footer <b>block</b>', field: 'content', editUrl: '/blocks/12/edit?a=1&b=2', blocksDeletion: true),
         ]);
 
         $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/restrict.pdf?_tab=4');

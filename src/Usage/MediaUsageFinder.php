@@ -70,7 +70,7 @@ readonly class MediaUsageFinder
      */
     private function findColumnUsages(string $path, int $limit): array
     {
-        if (null === $this->managerRegistry) {
+        if (!$this->managerRegistry instanceof Registry) {
             return [];
         }
 
@@ -160,7 +160,7 @@ readonly class MediaUsageFinder
 
     private function completeUsage(MediaUsage $usage): MediaUsage
     {
-        if (null !== $this->urlGenerator && null === $usage->editUrl) {
+        if ($this->urlGenerator instanceof MediaUsageUrlGeneratorInterface && null === $usage->editUrl) {
             return $usage->withEditUrl($this->urlGenerator->generateEditUrl($usage));
         }
 

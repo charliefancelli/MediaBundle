@@ -48,10 +48,10 @@ class UsageDeleteGuardListenerTest extends WebTestCase
         try {
             $this->originalStorage->delete('not_used/default.pdf');
             $this->fail('A MediaInUseException was expected.');
-        } catch (MediaInUseException $exception) {
-            $this->assertSame('not_used/default.pdf', $exception->getPath());
-            $this->assertSame(Page::class, $exception->getEntityName());
-            $this->assertSame('image', $exception->getPropertyName());
+        } catch (MediaInUseException $mediaInUseException) {
+            $this->assertSame('not_used/default.pdf', $mediaInUseException->getPath());
+            $this->assertSame(Page::class, $mediaInUseException->getEntityName());
+            $this->assertSame('image', $mediaInUseException->getPropertyName());
         }
 
         $this->assertTrue($this->originalStorage->has('not_used/default.pdf'));
@@ -66,9 +66,9 @@ class UsageDeleteGuardListenerTest extends WebTestCase
         try {
             $this->originalStorage->delete('not_used/default.pdf');
             $this->fail('A MediaInUseException was expected.');
-        } catch (MediaInUseException $exception) {
-            $this->assertSame('Footer block', $exception->getEntityName());
-            $this->assertSame('', $exception->getPropertyName());
+        } catch (MediaInUseException $mediaInUseException) {
+            $this->assertSame('Footer block', $mediaInUseException->getEntityName());
+            $this->assertSame('', $mediaInUseException->getPropertyName());
         }
     }
 
@@ -81,8 +81,8 @@ class UsageDeleteGuardListenerTest extends WebTestCase
         try {
             $this->originalStorage->deleteDirectory('not_used');
             $this->fail('A MediaInUseException was expected.');
-        } catch (MediaInUseException $exception) {
-            $this->assertSame('not_used/default.pdf', $exception->getPath());
+        } catch (MediaInUseException $mediaInUseException) {
+            $this->assertSame('not_used/default.pdf', $mediaInUseException->getPath());
         }
 
         $this->assertTrue($this->originalStorage->has('not_used/default.pdf'));
@@ -127,8 +127,8 @@ class UsageDeleteGuardListenerTest extends WebTestCase
         try {
             $this->originalStorage->delete('not_used/default.pdf');
             $this->fail('A MediaInUseException was expected.');
-        } catch (MediaInUseException $exception) {
-            $this->assertSame('The media "not_used/default.pdf" is used by "Footer block". It cannot be deleted.', $exception->getMessage());
+        } catch (MediaInUseException $mediaInUseException) {
+            $this->assertSame('The media "not_used/default.pdf" is used by "Footer block". It cannot be deleted.', $mediaInUseException->getMessage());
         }
     }
 
