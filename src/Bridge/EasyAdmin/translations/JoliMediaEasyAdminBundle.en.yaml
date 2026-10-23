@@ -59,7 +59,7 @@ media:
         caption: 'Caption'
         copyright: 'Copyright'
         path_too_long: 'The path of this media is too long: its metadata cannot be stored.'
-        saved_failure: 'Failed to save the metadata of the media "%media%": %error%'
+        saved_failure: 'Failed to save the metadata of the media "%media%".'
         saved_success: 'The metadata of the media "%media%" were successfully saved'
         tab: 'Metadata'
         tags: 'Tags'

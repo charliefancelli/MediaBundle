@@ -83,6 +83,7 @@ return static function (ContainerConfigurator $container): void {
             '$metadataManager' => service('joli_media.metadata.manager')->nullOnInvalid(),
             '$metadataStorage' => service('joli_media.metadata.storage')->nullOnInvalid(),
             '$metadataFields' => param('joli_media.metadata.fields'),
+            '$logger' => service('logger')->ignoreOnInvalid(),
         ])
         ->call('setContainer', [service('service_container')])
         ->tag('controller.service_arguments')

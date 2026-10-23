@@ -62,7 +62,7 @@ media:
         caption: 'Légende'
         copyright: 'Copyright'
         path_too_long: 'Le chemin de ce média est trop long : ses métadonnées ne peuvent pas être enregistrées.'
-        saved_failure: 'Échec de l''enregistrement des métadonnées du média "%media%" : %error%'
+        saved_failure: 'Échec de l''enregistrement des métadonnées du média "%media%".'
         saved_success: 'Les métadonnées du média "%media%" ont été enregistrées avec succès'
         tab: 'Métadonnées'
         tags: 'Tags'

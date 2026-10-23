@@ -4,19 +4,33 @@ namespace JoliCode\MediaBundle\Tests\Bridge\EasyAdmin\Controller;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
+use Doctrine\Persistence\ManagerRegistry;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Asset\AssetRegistrar;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Config\Config;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Controller\MediaAdminController;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Paginator\MediaPaginator;
+use JoliCode\MediaBundle\Bridge\EasyAdmin\Router\MediaAdminRouter;
+use JoliCode\MediaBundle\Conversion\Converter;
+use JoliCode\MediaBundle\Library\LibraryContainer;
 use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
+use JoliCode\MediaBundle\Resolver\Resolver;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
 use JoliCode\MediaBundle\Tests\Application\Security\TestMediaVoter;
+use Psr\Container\ContainerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+use Twig\Environment;
 
 class MediaAdminControllerTest extends WebTestCase
 {
@@ -152,6 +166,78 @@ class MediaAdminControllerTest extends WebTestCase
             'metadata' => ['alt' => 'Denied'],
         ]);
         $this->assertResponseStatusCodeSame(403);
+        $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
+    }
+
+    public function testAnInvalidSubmissionDoesNotTouchTheStoredMetadata(): void
+    {
+        $this->saveMetadata('Stored alt', 'Stored caption', 'Stored copyright', ['stored']);
+
+        $crawler = $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH);
+        $form = $crawler->filter('#tab-metadata form')->selectButton('Save the metadata')->form([
+            'metadata[alt]' => str_repeat('a', MediaMetadata::ALT_MAX_LENGTH + 1),
+            'metadata[tags]' => 'changed, other',
+        ]);
+        $this->client->submit($form);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorTextContains('.alert-danger', 'Failed to save the metadata');
+        $this->assertStoredMetadataIsUnchanged();
+    }
+
+    public function testADeniedSubmissionDoesNotTouchTheStoredMetadata(): void
+    {
+        $this->saveMetadata('Stored alt', 'Stored caption', 'Stored copyright', ['stored']);
+        TestMediaVoter::$denyEditMetadata = true;
+
+        $this->client->request(Request::METHOD_POST, '/admin/media/show/' . self::METADATA_PATH, [
+            'metadata' => ['alt' => 'Denied', 'tags' => 'changed'],
+        ]);
+
+        $this->assertResponseStatusCodeSame(403);
+        $this->assertStoredMetadataIsUnchanged();
+    }
+
+    public function testAnUnavailableTabFallsBackToTheFirstOne(): void
+    {
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH . '?_tab=9');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorExists('#tab-general.active');
+
+        TestMediaVoter::$denyEditMetadata = true;
+        $this->client->request(Request::METHOD_GET, '/admin/media/show/' . self::METADATA_PATH . '?_tab=3');
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorNotExists('#tab-metadata');
+    }
+
+    public function testNothingMetadataRelatedIsDisplayedWhenTheMetadataAreDisabled(): void
+    {
+        $container = static::getContainer();
+        // same wiring as the bridge, without the metadata services (what an application without metadata gets)
+        $disabled = new MediaAdminController(
+            $this->service('joli_media.library_container', LibraryContainer::class),
+            $this->service('joli_media_easy_admin.config', Config::class),
+            $this->service('joli_media.resolver', Resolver::class),
+            $this->service('joli_media.converter', Converter::class),
+            $this->service('translator', TranslatorInterface::class),
+            $this->service('twig', Environment::class),
+            $this->service('form.factory', FormFactoryInterface::class),
+            $this->service('joli_media_easy_admin.router', MediaAdminRouter::class),
+            $this->service('joli_media_easy_admin.paginator', MediaPaginator::class),
+            $this->service('joli_media_easy_admin.asset.registrar', AssetRegistrar::class),
+            $this->service('security.authorization_checker', AuthorizationCheckerInterface::class),
+        );
+        $disabled->setContainer($this->service('service_container', ContainerInterface::class));
+        $container->set('joli_media_easy_admin.controller.admin', $disabled);
+
+        $this->client->request(Request::METHOD_POST, '/admin/media/show/' . self::METADATA_PATH, [
+            'metadata' => ['alt' => 'Ignored'],
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSelectorNotExists('#tablist-tab-metadata');
+        $this->assertSelectorNotExists('#tab-metadata');
+        $this->assertSelectorNotExists('datalist');
         $this->assertNotInstanceOf(MediaMetadata::class, $this->getMetadata());
     }
 
@@ -492,6 +578,33 @@ class MediaAdminControllerTest extends WebTestCase
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $class
+     *
+     * @return T
+     */
+    private function service(string $id, string $class): object
+    {
+        $service = static::getContainer()->get($id);
+        $this->assertInstanceOf($class, $service);
+
+        return $service;
+    }
+
+    private function assertStoredMetadataIsUnchanged(): void
+    {
+        // anything left dirty in the entity manager would be written by this flush
+        $this->service('doctrine', ManagerRegistry::class)->getManager()->flush();
+
+        $metadata = $this->getMetadata();
+        $this->assertSame('Stored alt', $metadata?->getAlt());
+        $this->assertSame('Stored caption', $metadata->getCaption());
+        $this->assertSame('Stored copyright', $metadata->getCopyright());
+        $this->assertSame(['stored'], $metadata->getTags());
     }
 
     private function getMetadata(): ?MediaMetadata

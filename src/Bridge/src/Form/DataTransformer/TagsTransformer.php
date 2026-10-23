@@ -3,6 +3,7 @@
 namespace JoliCode\MediaBundle\Bridge\Form\DataTransformer;
 
 use Symfony\Component\Form\DataTransformerInterface;
+use Symfony\Component\Form\Exception\TransformationFailedException;
 
 /**
  * Turns the list of tags into a comma-separated string, and back.
@@ -24,6 +25,10 @@ readonly class TagsTransformer implements DataTransformerInterface
     {
         if (null === $value || '' === $value) {
             return [];
+        }
+
+        if (!\is_string($value)) { // @phpstan-ignore function.alreadyNarrowedType (the interface is not strictly typed)
+            throw new TransformationFailedException('Expected a string or null.');
         }
 
         return explode(',', $value);

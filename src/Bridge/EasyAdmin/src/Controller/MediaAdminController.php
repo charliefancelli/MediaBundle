@@ -34,6 +34,7 @@ use JoliCode\MediaBundle\Storage\OriginalStorage;
 use League\Flysystem\PathTraversalDetected;
 use League\Flysystem\UnableToListContents;
 use League\Flysystem\UnableToWriteFile;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
@@ -77,6 +78,7 @@ class MediaAdminController extends AbstractController
         private readonly ?MetadataStorageInterface $metadataStorage = null,
         /** @var list<string> */
         private readonly array $metadataFields = [],
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -574,14 +576,19 @@ class MediaAdminController extends AbstractController
         $metadataForm = null;
         $metadataPathTooLong = false;
         $metadataTags = [];
-        $metadataEnabled = $this->metadataProvider instanceof MetadataProvider
-            && $this->metadataManager instanceof MetadataManager
-            && $this->isActionGranted(AdminAction::EDIT_METADATA, new AdminAction(
-                libraryName: $this->getLibrary()->getName(),
-                path: Resolver::normalizePath($key),
-            ));
+        $metadataAvailable = $this->metadataProvider instanceof MetadataProvider && $this->metadataManager instanceof MetadataManager;
+        $metadataAction = new AdminAction(
+            libraryName: $this->getLibrary()->getName(),
+            path: Resolver::normalizePath($key),
+        );
+        $metadataEnabled = $metadataAvailable && $this->isActionGranted(AdminAction::EDIT_METADATA, $metadataAction);
 
-        if ($this->metadataProvider instanceof MetadataProvider && $this->metadataManager instanceof MetadataManager) {
+        if ($metadataAvailable && !$metadataEnabled && $request->isMethod(Request::METHOD_POST) && $request->request->has('metadata')) {
+            // nothing is bound or read before the grant is checked
+            $this->denyAccessUnlessGranted(AdminAction::EDIT_METADATA, $metadataAction);
+        }
+
+        if ($metadataEnabled) {
             if (mb_strlen($key) > MediaMetadata::PATH_MAX_LENGTH) {
                 $metadataPathTooLong = true;
             } else {
@@ -590,14 +597,10 @@ class MediaAdminController extends AbstractController
 
                 if ($metadataForm->isSubmitted()) {
                     $displayedTab = 3;
-                    $this->denyAccessUnlessGranted(AdminAction::EDIT_METADATA, new AdminAction(
-                        libraryName: $this->getLibrary()->getName(),
-                        path: Resolver::normalizePath($key),
-                    ));
 
                     if ($metadataForm->isValid()) {
                         try {
-                            $this->metadataManager->save($metadataForm->getData());
+                            $this->metadataManager->save($this->applyWorkingCopy($metadataForm->getData(), $key));
                             $this->addFlash(
                                 'success',
                                 $this->translator->trans(
@@ -612,19 +615,16 @@ class MediaAdminController extends AbstractController
                                 ['key' => $key, '_tab' => 3],
                             ));
                         } catch (\Exception $e) {
-                            $error = $e->getMessage();
+                            // the message may hold SQL or user input, and flashes are rendered raw
+                            $this->logger?->error('Unable to save the metadata of the media "{media}".', ['media' => $key, 'exception' => $e]);
                         }
-                    } else {
-                        $error = $metadataForm->getErrors(true, false);
                     }
 
-                    // the form may have changed the memoized metadata: do not let it leak
-                    $this->metadataProvider->forget($this->getLibrary()->getName(), $key);
                     $this->addFlash(
                         'danger',
                         $this->translator->trans(
                             'media.metadata.saved_failure',
-                            ['%media%' => basename($key), '%error%' => $error],
+                            ['%media%' => basename($key)],
                             'JoliMediaEasyAdminBundle',
                         )
                     );
@@ -651,6 +651,13 @@ class MediaAdminController extends AbstractController
                     $this->resolver->resolveMediaVariation($media, $variation, $this->getLibrary()->getName());
                 }
             }
+        }
+
+        // fall back to the first tab when the requested one is not rendered
+        $displayedTab = (int) $displayedTab;
+        $hasVariationsTab = $this->config->isVisible('show_variations_list') && \count($media->getVariations()) > 0;
+        if ((2 === $displayedTab && !$hasVariationsTab) || (3 === $displayedTab && !$metadataEnabled) || $displayedTab < 1 || $displayedTab > 3) {
+            $displayedTab = 1;
         }
 
         return new Response($this->twig->render('@JoliMediaEasyAdmin/show.html.twig', [
@@ -935,17 +942,43 @@ class MediaAdminController extends AbstractController
         return $form;
     }
 
+    /**
+     * The form is bound to an unmanaged working copy, so that nothing reaches the
+     * entity manager before the submission is granted and valid.
+     */
     private function createMetadataForm(string $path): FormInterface
     {
         $libraryName = $this->getLibrary()->getName();
-        $metadata = $this->metadataProvider?->get($path, $libraryName) ?? new MediaMetadata($libraryName, $path);
+        $stored = $this->metadataProvider?->get($path, $libraryName);
+        $copy = new MediaMetadata($libraryName, $path);
 
-        return $this->formFactory->create(MetadataType::class, $metadata, [
+        if ($stored instanceof MediaMetadata) {
+            $this->copyMetadata($stored, $copy);
+        }
+
+        return $this->formFactory->create(MetadataType::class, $copy, [
             'action' => $this->mediaAdminRouter->generateUrl('show', ['key' => $path]),
             'method' => Request::METHOD_POST,
             'translation_domain' => $this->config->getTranslationDomain(),
             'fields' => $this->metadataFields,
         ]);
+    }
+
+    private function applyWorkingCopy(MediaMetadata $copy, string $path): MediaMetadata
+    {
+        $libraryName = $this->getLibrary()->getName();
+        $target = $this->metadataProvider?->get($path, $libraryName) ?? new MediaMetadata($libraryName, $path);
+        $this->copyMetadata($copy, $target);
+
+        return $target;
+    }
+
+    private function copyMetadata(MediaMetadata $from, MediaMetadata $to): void
+    {
+        $to->setAlt($from->getAlt());
+        $to->setCaption($from->getCaption());
+        $to->setCopyright($from->getCopyright());
+        $to->setTags($from->getTags());
     }
 
     private function createMoveFileForm(?string $path = null): FormInterface

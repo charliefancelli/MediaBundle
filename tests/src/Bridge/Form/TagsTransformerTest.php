@@ -5,6 +5,7 @@ namespace JoliCode\MediaBundle\Tests\Bridge\Form;
 use JoliCode\MediaBundle\Bridge\Form\DataTransformer\TagsTransformer;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Form\Exception\TransformationFailedException;
 
 class TagsTransformerTest extends TestCase
 {
@@ -23,6 +24,13 @@ class TagsTransformerTest extends TestCase
         $metadata->setTags((new TagsTransformer())->reverseTransform('a, b ,c, A,, '));
 
         $this->assertSame(['a', 'b', 'c'], $metadata->getTags());
+    }
+
+    public function testReverseTransformRefusesNonStrings(): void
+    {
+        $this->expectException(TransformationFailedException::class);
+
+        (new TagsTransformer())->reverseTransform(['a']); // @phpstan-ignore argument.type
     }
 
     public function testTransform(): void

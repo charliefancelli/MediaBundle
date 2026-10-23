@@ -379,7 +379,7 @@
                 {{ form_end(metadata_form) }}
 
                 {% if metadata_form.tags is defined %}
-                    <datalist id="joli-media-tags">
+                    <datalist id="{{ metadata_form.tags.vars.attr.list }}">
                         {% for tag in metadata_tags %}
                             <option value="{{ tag }}"></option>
                         {% endfor %}
