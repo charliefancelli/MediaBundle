@@ -2,6 +2,7 @@
 
 namespace JoliCode\MediaBundle;
 
+use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Compiler\DoctrineOrmMappingsPass;
 use Doctrine\DBAL\Types\StringType;
 use Doctrine\ORM\EntityManagerInterface;
 use Imagine\Image\Metadata\ExifMetadataReader;
@@ -10,6 +11,7 @@ use Imagine\Gmagick\Imagine as GmagickImagine;
 use Imagine\Imagick\Imagine as ImagickImagine;
 use JoliCode\MediaBundle\DependencyInjection\Compiler\CollectorPass;
 use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
+use JoliCode\MediaBundle\DependencyInjection\Compiler\MetadataMappingPass;
 use JoliCode\MediaBundle\Doctrine\Type\MediaLongType;
 use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Doctrine\Types;
@@ -73,6 +75,15 @@ class JoliMediaBundle extends AbstractBundle
 
         $container->addCompilerPass(new CollectorPass());
         $container->addCompilerPass(new DoctrinePass());
+
+        if (class_exists(DoctrineOrmMappingsPass::class)) {
+            // a null "joli_media.metadata.entity_manager" is skipped: the default entity manager is used
+            $container->addCompilerPass(new MetadataMappingPass(DoctrineOrmMappingsPass::createAttributeMappingDriver(
+                ['JoliCode\MediaBundle\Metadata\Model'],
+                [__DIR__ . '/Metadata/Model'],
+                ['joli_media.metadata.entity_manager', 'doctrine.default_entity_manager'],
+            )));
+        }
     }
 
     public function configure(DefinitionConfigurator $definition): void
