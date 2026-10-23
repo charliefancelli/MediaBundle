@@ -58,6 +58,7 @@ use JoliCode\MediaBundle\Twig\Components\Img;
 use JoliCode\MediaBundle\Twig\Components\Picture;
 use JoliCode\MediaBundle\Twig\Components\Source;
 use JoliCode\MediaBundle\Twig\JoliMediaExtension;
+use JoliCode\MediaBundle\Usage\MediaUsageFinder;
 use JoliCode\MediaBundle\Validator\MediaValidator;
 use JoliCode\MediaBundle\Variation\Variation;
 use JoliCode\MediaBundle\Variation\VariationContainer;
@@ -224,6 +225,18 @@ return static function (ContainerConfigurator $container): void {
             'event' => MediaEvents::POST_MOVE_MEDIA,
             'method' => 'onMediaPostMove',
         ])
+
+        // usages
+        ->set('joli_media.usage_finder', MediaUsageFinder::class)
+        ->public()
+        ->args([
+            service('doctrine')->nullOnInvalid(),
+            service(CacheInterface::class),
+            service('joli_media.library_container'),
+            tagged_iterator('joli_media.media_usage_provider'),
+            null,
+        ])
+        ->alias(MediaUsageFinder::class, 'joli_media.usage_finder')
 
         // library
         ->set('joli_media.library_container', LibraryContainer::class)

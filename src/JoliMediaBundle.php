@@ -20,6 +20,7 @@ use JoliCode\MediaBundle\PreProcessor\HeifPreProcessor;
 use JoliCode\MediaBundle\Processor\Imagine;
 use JoliCode\MediaBundle\Resolver\Resolver;
 use JoliCode\MediaBundle\Transformer\Resize\Mode;
+use JoliCode\MediaBundle\Usage\MediaUsageProviderInterface;
 use Symfony\Component\Config\Definition\Builder\FloatNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\NodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
@@ -96,6 +97,10 @@ class JoliMediaBundle extends AbstractBundle
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
         $container->import('../config/services.php');
+
+        $builder->registerForAutoconfiguration(MediaUsageProviderInterface::class)
+            ->addTag('joli_media.media_usage_provider')
+        ;
 
         $builder->setParameter('env(JOLI_MEDIA_CWEBP_BINARY)', '/usr/local/bin/cwebp');
         $builder->setParameter('env(JOLI_MEDIA_EXIFTOOL_BINARY)', '/usr/local/bin/exiftool');
