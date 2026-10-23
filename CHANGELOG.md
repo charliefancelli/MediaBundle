@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- feature - Add a `MediaUsageFinder` service telling where a media is used: in the Doctrine `media` and `media_long` columns, and in the places reported by the services implementing `MediaUsageProviderInterface` (a JSON field, a CMS block...), which can also prevent the deletion of the media - see the [media usages documentation](doc/misc-features/media-usages.rst)
+- feature - The EasyAdmin bridge shows a "Usages" tab on the page of a media, and lists the places where a media is used when its deletion is refused - see the [EasyAdmin documentation](doc/bridges/easy-admin.rst)
+
 ## [0.10.0] - 2026-10-05
 
 - bc break - The bundle no longer forces a `public` visibility when writing media and variation files: the visibility configured on the Flysystem storage now applies. On Amazon S3, the forced visibility made every file public through a `public-read` ACL, and failed on the buckets where ACLs are disabled. Declare `visibility: public` on your Flysystem storage if you relied on the forced visibility

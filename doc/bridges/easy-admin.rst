@@ -278,6 +278,17 @@ When most of your text editors share the same variation, define it once for the 
 
 The variation configured on a field always takes precedence over this default one. The variation must be defined in the default library, otherwise the media picker returns a "400 Bad Request" error. Media for which the variation does not apply - because of the variation `voters <../variations/variation-voters.html>`_, or because they are not images - are inserted as their original file.
 
+Usages of a media
+-----------------
+
+The page of a media displays a "Usages" tab listing where the media is used: the entities with a ``media`` or ``media_long`` column holding it, and the places reported by your own `usage providers <../misc-features/media-usages.rst>`_. Each usage shows its label, its field, whether it blocks the deletion of the media, and an "Edit" link to the edit page of the entity when it can be built. The tab is selected with the ``_tab=4`` query parameter.
+
+The link goes to the CRUD controller managing the entity. When several CRUD controllers manage the same entity, EasyAdmin picks one (the last one registered) and so does the link. There is no link for entities with a composite identifier, nor when no URL can be generated for the entity.
+
+When the deletion of a media is refused (a ``RESTRICT`` `deletion behavior <../misc-features/media-deletion-behavior.rst>`_ or a usage blocking the deletion), the message lists the places where the media is used. A refused media deletion redirects to the "Usages" tab of the media, a refused folder deletion to the page of the folder.
+
+The usages are looked up each time the page of a media is displayed, with one query per media field of your entities. Keep the providers fast.
+
 Restricting access to the Media library controller
 --------------------------------------------------
 
