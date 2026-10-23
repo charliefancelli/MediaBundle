@@ -118,14 +118,14 @@ The ``UsageDeleteGuardListener`` listens to the ``PreDeleteMediaEvent`` and to t
 - It runs after the Doctrine delete listeners (priority ``-16``), so the ``RESTRICT`` columns are reported first.
 - It works without DoctrineBundle.
 - Deleting a folder checks every media it contains (subfolders included), and refuses the deletion of the whole folder when one of them is blocked.
-- When no ``PostDeleteMediaEvent`` listener is registered, each file of a folder is checked twice: once for the folder, then for its own deletion.
+- When no ``PostDeleteFolderEvent`` listener is registered, each file of a folder is checked twice: once for the folder, then for its own deletion.
 
 The message of the exception tells where the media is used. For a usage without ``field``, it reads ``The media "a.jpg" is used by "App\Entity\Block". It cannot be deleted.``, the label being used when the usage has no ``entityClass`` either. Catch the exception as described in `the deletion behavior chapter <media-deletion-behavior.rst>`_.
 
 MediaUsageUrlGeneratorInterface
 -------------------------------
 
-``JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface`` is an extension point: its ``generateEditUrl(MediaUsage $usage): ?string`` method returns the URL of the page where a usage can be edited, or ``null`` when there is none. When a service is aliased to this interface, the finder fills the ``editUrl`` of the usages which have none. Admin bridges provide one: the `EasyAdmin bridge <../bridges/easy-admin.rst>`_ does, nothing is registered by default.
+``JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface`` is an extension point: its ``generateEditUrl(MediaUsage $usage): ?string`` method returns the URL of the page where a usage can be edited, or ``null`` when there is none. When a service is aliased to this interface, the finder fills the ``editUrl`` of the usages which have none. The `EasyAdmin bridge <../bridges/easy-admin.rst>`_ provides one; nothing is registered by default.
 
 A provider can also set the ``editUrl`` of its usages itself, it is then left untouched.
 

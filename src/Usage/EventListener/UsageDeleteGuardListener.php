@@ -37,7 +37,7 @@ readonly class UsageDeleteGuardListener
             return;
         }
 
-        // without POST_DELETE listeners each file of the folder is checked twice (this walk, then its own delete)
+        // without POST_DELETE_FOLDER listeners each file of the folder is checked twice (this walk, then its own delete)
         // listMedias() loads the whole listing before returning: there is no lazy public API to stop early
         foreach ($storage->listMedias($event->path, recursive: true) as $media) {
             $this->assertNotBlocked($storage, $media->getPath());

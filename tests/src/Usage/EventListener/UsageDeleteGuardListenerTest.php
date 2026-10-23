@@ -21,6 +21,8 @@ class UsageDeleteGuardListenerTest extends WebTestCase
     {
         parent::setUp();
 
+        StaticMediaUsageProvider::reset();
+
         /** @var LibraryContainer $libraries */
         $libraries = static::getContainer()->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();

@@ -17,6 +17,9 @@ class MediaInUseException extends \RuntimeException
         return $this->path;
     }
 
+    /**
+     * The entity class, or the label of the usage when a provider reported one without entity class.
+     */
     public function getEntityName(): string
     {
         return $this->entityName;

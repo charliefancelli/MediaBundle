@@ -141,7 +141,7 @@
 
 {% block main %}
     {% set has_variations_tab = config.isVisible('show_variations_list') and media.variations|length > 0 %}
-    {% set has_usages_tab = usages is not null %}
+    {% set has_usages_tab = usages is defined and usages is not null %}
     {% if has_variations_tab or has_usages_tab %}
         <div class="nav-tabs-custom form-tabs-tablist">
             <ul class="nav nav-tabs" role="tablist">
