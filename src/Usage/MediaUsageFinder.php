@@ -92,6 +92,13 @@ readonly class MediaUsageFinder
             /** @var EntityManagerInterface $objectManager */
             $objectManager = $this->managerRegistry->getManager($field->objectManagerName);
             $classMetadata = $objectManager->getClassMetadata($field->entityName);
+
+            // the cached fields come from getAllMetadata(): a mapped superclass has no table to query, and the
+            // subclasses of an inheritance hierarchy repeat the fields of their parent, found by its own query
+            if ($classMetadata->isMappedSuperclass || $classMetadata->isInheritedField($field->fieldName)) {
+                continue;
+            }
+
             $type = Types::MEDIA_LONG === $classMetadata->getTypeOfField($field->fieldName) ? new MediaLongType() : new MediaType();
 
             try {

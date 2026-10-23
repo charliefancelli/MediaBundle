@@ -19,6 +19,7 @@ use JoliCode\MediaBundle\Tests\Application\Usage\StaticMediaUsageProvider;
 use JoliCode\MediaBundle\Usage\MediaUsage;
 use JoliCode\MediaBundle\Usage\MediaUsageFinder;
 use JoliCode\MediaBundle\Usage\MediaUsageUrlGeneratorInterface;
+use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -227,9 +228,90 @@ class MediaUsageFinderTest extends WebTestCase
         $this->assertStringEndsWith('#7-str-child', $usages[0]->label);
     }
 
+    public function testInheritedFieldsAreOnlyReportedOnTheirDeclaringEntity(): void
+    {
+        $parent = new class {
+        };
+        $child = new class {
+        };
+
+        $parentMetadata = $this->createMock(ClassMetadata::class);
+        $parentMetadata->method('getTypeOfField')->willReturn(Types::MEDIA);
+        $parentMetadata->method('getIdentifierFieldNames')->willReturn(['id']);
+        $parentMetadata->method('getReflectionClass')->willReturn(new \ReflectionClass($parent));
+        $parentMetadata->method('getIdentifierValues')->willReturn([1]);
+        $parentMetadata->method('isInheritedField')->willReturn(false);
+
+        $childMetadata = $this->createMock(ClassMetadata::class);
+        $childMetadata->method('getTypeOfField')->willReturn(Types::MEDIA);
+        $childMetadata->method('getIdentifierFieldNames')->willReturn(['id']);
+        $childMetadata->method('getReflectionClass')->willReturn(new \ReflectionClass($child));
+        $childMetadata->method('getIdentifierValues')->willReturn([1]);
+        $childMetadata->method('isInheritedField')->willReturn(true);
+
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->once())->method('findBy')->willReturn([$parent]);
+
+        $entityManager = $this->createEntityManager([$parent::class => $parentMetadata, $child::class => $childMetadata], $repository);
+
+        $registry = $this->createMock(Registry::class);
+        $registry->method('getManager')->willReturn($entityManager);
+
+        $cache = new ArrayAdapter();
+        $cache->get(MediaEntityMetadataWarmer::MEDIA_FIELDS_CACHE_KEY, static fn (): array => [
+            new MediaEntityMetadata('default', $parent::class, 'media'),
+            new MediaEntityMetadata('default', $child::class, 'media'),
+        ]);
+
+        $finder = new MediaUsageFinder($registry, $cache, $this->service(LibraryContainer::class, LibraryContainer::class));
+
+        $this->assertCount(1, $finder->find('a.png'));
+    }
+
+    public function testMappedSuperclassesAreSkipped(): void
+    {
+        $superclass = new class {
+        };
+
+        $classMetadata = $this->createMock(ClassMetadata::class);
+        $classMetadata->isMappedSuperclass = true;
+        $classMetadata->method('getTypeOfField')->willReturn(Types::MEDIA);
+
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->never())->method('findBy');
+
+        $entityManager = $this->createEntityManager([$superclass::class => $classMetadata], $repository);
+
+        $registry = $this->createMock(Registry::class);
+        $registry->method('getManager')->willReturn($entityManager);
+
+        $cache = new ArrayAdapter();
+        $cache->get(MediaEntityMetadataWarmer::MEDIA_FIELDS_CACHE_KEY, static fn (): array => [new MediaEntityMetadata('default', $superclass::class, 'media')]);
+
+        $finder = new MediaUsageFinder($registry, $cache, $this->service(LibraryContainer::class, LibraryContainer::class));
+
+        $this->assertSame([], $finder->find('a.png'));
+    }
+
     protected static function getKernelClass(): string
     {
         return Kernel::class;
+    }
+
+    /**
+     * @param array<class-string, ClassMetadata<object>&MockObject> $metadata
+     */
+    private function createEntityManager(array $metadata, EntityRepository $repository): EntityManagerInterface
+    {
+        $connection = $this->createMock(Connection::class);
+        $connection->method('getDatabasePlatform')->willReturn($this->createMock(AbstractPlatform::class));
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getClassMetadata')->willReturnCallback(static fn (string $class): ClassMetadata => $metadata[$class]);
+        $entityManager->method('getRepository')->willReturn($repository);
+        $entityManager->method('getConnection')->willReturn($connection);
+
+        return $entityManager;
     }
 
     /**
