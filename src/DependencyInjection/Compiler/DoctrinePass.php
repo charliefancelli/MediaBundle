@@ -16,6 +16,11 @@ class DoctrinePass implements CompilerPassInterface
         }
 
         if (isset($bundles['DoctrineBundle'])) {
+            // the Doctrine listeners move and delete the metadata inside their transaction
+            if ($container->hasDefinition('joli_media.metadata.event_listener.follow')) {
+                $container->removeDefinition('joli_media.metadata.event_listener.follow');
+            }
+
             return;
         }
 

@@ -2,19 +2,15 @@
 
 namespace JoliCode\MediaBundle\Tests\Event\Listener;
 
-use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use JoliCode\MediaBundle\Exception\MediaInUseException;
 use JoliCode\MediaBundle\Library\LibraryContainer;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
-use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
-use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
-use JoliCode\MediaBundle\Tests\Metadata\FailingMetadataStorage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,6 +18,8 @@ use Symfony\Component\Console\Input\StringInput;
 
 class DeleteFolderEventListenerTest extends WebTestCase
 {
+    use MetadataTestTrait;
+
     private EntityManagerInterface $entityManager;
 
     private EntityRepository $articleRepository;
@@ -29,10 +27,6 @@ class DeleteFolderEventListenerTest extends WebTestCase
     private EntityRepository $pageRepository;
 
     private OriginalStorage $originalStorage;
-
-    private MetadataStorageInterface $metadataStorage;
-
-    private Registry $registry;
 
     protected function setUp(): void
     {
@@ -49,11 +43,7 @@ class DeleteFolderEventListenerTest extends WebTestCase
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
 
-        // not the container's service: tests replace it to make it fail
-        /** @var Registry $registry */
-        $registry = $container->get('doctrine');
-        $this->registry = $registry;
-        $this->metadataStorage = new DoctrineMetadataStorage($registry);
+        $this->setUpMetadata();
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -197,7 +187,7 @@ class DeleteFolderEventListenerTest extends WebTestCase
     {
         $this->seed('default', 'sub/folder/deep/test.txt');
 
-        static::getContainer()->set('joli_media.metadata.storage.doctrine', new FailingMetadataStorage($this->registry));
+        $this->makeTheMetadataStorageFail();
 
         try {
             $this->originalStorage->deleteDirectory('sub/folder/deep');
@@ -215,17 +205,5 @@ class DeleteFolderEventListenerTest extends WebTestCase
     protected static function getKernelClass(): string
     {
         return Kernel::class;
-    }
-
-    private function seed(string $library, string $path): void
-    {
-        $metadata = new MediaMetadata($library, $path);
-        $metadata->setAlt('Alt of ' . $path);
-        $this->metadataStorage->save($metadata);
-    }
-
-    private function altOf(string $library, string $path): ?string
-    {
-        return $this->metadataStorage->get($library, $path)?->getAlt();
     }
 }

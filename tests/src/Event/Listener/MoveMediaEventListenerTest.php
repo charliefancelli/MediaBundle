@@ -2,7 +2,6 @@
 
 namespace JoliCode\MediaBundle\Tests\Event\Listener;
 
-use Doctrine\Bundle\DoctrineBundle\Registry;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
@@ -10,14 +9,11 @@ use JoliCode\MediaBundle\Doctrine\Type\MediaType;
 use JoliCode\MediaBundle\Library\LibraryContainer;
 use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
-use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
-use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Model\Media;
 use JoliCode\MediaBundle\Storage\OriginalStorage;
 use JoliCode\MediaBundle\Tests\Application\Entity\Article;
 use JoliCode\MediaBundle\Tests\Application\Entity\Page;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
-use JoliCode\MediaBundle\Tests\Metadata\FailingMetadataStorage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -25,6 +21,8 @@ use Symfony\Component\Console\Input\StringInput;
 
 class MoveMediaEventListenerTest extends WebTestCase
 {
+    use MetadataTestTrait;
+
     private AbstractPlatform $platform;
 
     private MediaType $mediaType;
@@ -34,10 +32,6 @@ class MoveMediaEventListenerTest extends WebTestCase
     private EntityRepository $pageRepository;
 
     private OriginalStorage $originalStorage;
-
-    private MetadataStorageInterface $metadataStorage;
-
-    private Registry $registry;
 
     private EntityManagerInterface $entityManager;
 
@@ -59,11 +53,7 @@ class MoveMediaEventListenerTest extends WebTestCase
         $libraries = $container->get('joli_media.library_container');
         $this->originalStorage = $libraries->get('default')->getOriginalStorage();
 
-        // not the container's service: tests replace it to make it fail
-        /** @var Registry $registry */
-        $registry = $container->get('doctrine');
-        $this->registry = $registry;
-        $this->metadataStorage = new DoctrineMetadataStorage($registry);
+        $this->setUpMetadata();
 
         if (self::$kernel instanceof Kernel) {
             $application = new Application(self::$kernel);
@@ -185,7 +175,7 @@ class MoveMediaEventListenerTest extends WebTestCase
         $this->entityManager->clear();
 
         // the metadata storage fails after the MediaType columns have been updated
-        static::getContainer()->set('joli_media.metadata.storage.doctrine', new FailingMetadataStorage($this->registry));
+        $this->makeTheMetadataStorageFail();
 
         try {
             $this->originalStorage->move('sub/folder/deep/test.txt', 'sub/folder/deep/test-2.txt');
@@ -223,17 +213,5 @@ class MoveMediaEventListenerTest extends WebTestCase
     protected static function getKernelClass(): string
     {
         return Kernel::class;
-    }
-
-    private function seed(string $library, string $path): void
-    {
-        $metadata = new MediaMetadata($library, $path);
-        $metadata->setAlt('Alt of ' . $path);
-        $this->metadataStorage->save($metadata);
-    }
-
-    private function altOf(string $library, string $path): ?string
-    {
-        return $this->metadataStorage->get($library, $path)?->getAlt();
     }
 }

@@ -3,6 +3,7 @@
 namespace JoliCode\MediaBundle\Tests\DependencyInjection;
 
 use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
+use JoliCode\MediaBundle\Event\MediaEvents;
 use JoliCode\MediaBundle\JoliMediaBundle;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use PHPUnit\Framework\TestCase;
@@ -63,13 +64,47 @@ class MetadataDisabledTest extends TestCase
         $this->assertSame('joli_media.metadata.storage', (string) $container->getAlias(MetadataStorageInterface::class));
     }
 
+    public function testTheFollowListenerIsRemovedWhenDoctrineBundleIsPresent(): void
+    {
+        $container = $this->createContainer(['enabled' => true, 'storage' => 'app.metadata_storage'], ['DoctrineBundle' => 'Doctrine\Bundle\DoctrineBundle\DoctrineBundle']);
+
+        $this->assertTrue($container->hasDefinition('joli_media.metadata.event_listener.follow'));
+
+        (new DoctrinePass())->process($container);
+
+        $this->assertFalse($container->hasDefinition('joli_media.metadata.event_listener.follow'));
+
+        foreach (['media_move', 'folder_move', 'media_delete', 'folder_delete'] as $listener) {
+            $arguments = $container->getDefinition('joli_media.event_listener.' . $listener)->getArguments();
+            $this->assertSame('joli_media.metadata.storage', (string) $arguments['$metadataStorage']);
+        }
+    }
+
+    public function testTheFollowListenerIsKeptWithoutDoctrineBundle(): void
+    {
+        $container = $this->createContainer(['enabled' => true, 'storage' => 'app.metadata_storage']);
+
+        (new DoctrinePass())->process($container);
+
+        $this->assertFalse($container->hasDefinition('joli_media.event_listener.media_move'));
+        $this->assertTrue($container->hasDefinition('joli_media.metadata.event_listener.follow'));
+        $events = array_column($container->getDefinition('joli_media.metadata.event_listener.follow')->getTag('kernel.event_listener'), 'method', 'event');
+        $this->assertSame([
+            MediaEvents::POST_MOVE_MEDIA => 'onMediaPostMove',
+            MediaEvents::POST_MOVE_FOLDER => 'onFolderPostMove',
+            MediaEvents::POST_DELETE_MEDIA => 'onMediaPostDelete',
+            MediaEvents::POST_DELETE_FOLDER => 'onFolderPostDelete',
+        ], $events);
+    }
+
     /**
-     * @param array<string, mixed> $metadataConfig
+     * @param array<string, mixed>  $metadataConfig
+     * @param array<string, string> $bundles
      */
-    private function createContainer(array $metadataConfig): ContainerBuilder
+    private function createContainer(array $metadataConfig, array $bundles = []): ContainerBuilder
     {
         $container = new ContainerBuilder(new ParameterBag([
-            'kernel.bundles' => [],
+            'kernel.bundles' => $bundles,
             'kernel.project_dir' => __DIR__,
             'kernel.debug' => false,
             'kernel.environment' => 'test',

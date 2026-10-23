@@ -1,6 +1,7 @@
 <?php
 
 use JoliCode\MediaBundle\Event\MediaEvents;
+use JoliCode\MediaBundle\Metadata\EventListener\MetadataFollowListener;
 use JoliCode\MediaBundle\Metadata\MetadataManager;
 use JoliCode\MediaBundle\Metadata\MetadataProvider;
 use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
@@ -48,6 +49,21 @@ return static function (ContainerConfigurator $container): void {
         $services->get('joli_media.event_listener.' . $listener)
             ->arg('$metadataStorage', service('joli_media.metadata.storage'))
         ;
+    }
+
+    // without DoctrineBundle those listeners do not exist (DoctrinePass removes them): this one does their job
+    $follow = $services
+        ->set('joli_media.metadata.event_listener.follow', MetadataFollowListener::class)
+        ->args([service('joli_media.metadata.storage')])
+    ;
+
+    foreach ([
+        MediaEvents::POST_MOVE_MEDIA => 'onMediaPostMove',
+        MediaEvents::POST_MOVE_FOLDER => 'onFolderPostMove',
+        MediaEvents::POST_DELETE_MEDIA => 'onMediaPostDelete',
+        MediaEvents::POST_DELETE_FOLDER => 'onFolderPostDelete',
+    ] as $event => $method) {
+        $follow->tag('kernel.event_listener', ['event' => $event, 'method' => $method]);
     }
 
     // ...so the provider must forget what it memoized once they are done (low priority: after the bundle listeners)

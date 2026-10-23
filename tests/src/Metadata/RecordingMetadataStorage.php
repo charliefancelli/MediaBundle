@@ -20,6 +20,11 @@ class RecordingMetadataStorage implements MetadataStorageInterface
     public array $getManyArguments = [];
 
     /**
+     * @var list<list<string>> the move and delete calls: the method name, then its arguments
+     */
+    public array $mutations = [];
+
+    /**
      * @var array<string, MediaMetadata>
      */
     private array $rows = [];
@@ -71,22 +76,26 @@ class RecordingMetadataStorage implements MetadataStorageInterface
     #[\Override]
     public function delete(string $library, string $path): void
     {
+        $this->mutations[] = ['delete', $library, $path];
         unset($this->rows[$library . "\0" . $path]);
     }
 
     #[\Override]
     public function deleteFolder(string $library, string $folder): void
     {
+        $this->mutations[] = ['deleteFolder', $library, $folder];
     }
 
     #[\Override]
     public function move(string $library, string $from, string $to): void
     {
+        $this->mutations[] = ['move', $library, $from, $to];
     }
 
     #[\Override]
     public function moveFolder(string $library, string $from, string $to): void
     {
+        $this->mutations[] = ['moveFolder', $library, $from, $to];
     }
 
     #[\Override]
