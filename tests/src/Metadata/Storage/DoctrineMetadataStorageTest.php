@@ -9,6 +9,7 @@ use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
 use JoliCode\MediaBundle\Metadata\Storage\MetadataStorageInterface;
 use JoliCode\MediaBundle\Tests\Application\Doctrine\QueryCounterMiddleware;
 use JoliCode\MediaBundle\Tests\Application\Kernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Console\Input\StringInput;
@@ -188,13 +189,119 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $this->assertNull($this->storage->get('default', 'src/x.png'));
     }
 
-    public function testMoveFolderToTheRoot(): void
+    public function testMoveFolderRejectsAnEmptyTarget(): void
     {
-        $this->store('default', 'src/deep/x.png', 'Alt of x');
+        $this->expectException(\InvalidArgumentException::class);
 
         $this->storage->moveFolder('default', 'src', '');
+    }
 
-        $this->assertSame('Alt of x', $this->storage->get('default', 'deep/x.png')?->getAlt());
+    #[DataProvider('provideNestedFolders')]
+    public function testMoveFolderRejectsNestedFolders(string $from, string $to): void
+    {
+        $this->store('default', 'a/x.png', 'A');
+
+        try {
+            $this->storage->moveFolder('default', $from, $to);
+            $this->fail('An exception was expected.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame('A', $this->storage->get('default', 'a/x.png')?->getAlt());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function provideNestedFolders(): iterable
+    {
+        yield 'into a child' => ['a', 'a/b'];
+        yield 'onto its parent' => ['a/b', 'a'];
+        yield 'onto itself' => ['a', '/a/'];
+    }
+
+    public function testDeleteFolderDoesNotReturnAStaleInstance(): void
+    {
+        $this->store('default', 'dir/a.png', 'A');
+        $managed = $this->storage->get('default', 'dir/a.png');
+        $this->assertNotNull($managed);
+
+        $this->storage->deleteFolder('default', 'dir');
+
+        $this->assertNull($this->storage->get('default', 'dir/a.png'));
+        $this->assertFalse($this->entityManager->contains($managed));
+    }
+
+    public function testMoveFolderDoesNotReturnAStaleInstance(): void
+    {
+        $this->store('default', 'dir/a.png', 'A', ['one']);
+        $managed = $this->storage->get('default', 'dir/a.png');
+
+        $this->storage->moveFolder('default', 'dir', 'new');
+
+        $this->assertNull($this->storage->get('default', 'dir/a.png'));
+        $moved = $this->storage->get('default', 'new/a.png');
+        $this->assertNotNull($moved);
+        $this->assertNotSame($managed, $moved);
+        $this->assertSame('new/a.png', $moved->getPath());
+        $this->assertSame(['one'], $moved->getTags());
+    }
+
+    public function testPathsAreNormalizedOnSave(): void
+    {
+        $this->store('default', '/sub//a.png', 'A');
+
+        $this->assertSame('sub/a.png', $this->storage->get('default', 'sub/a.png')?->getPath());
+        $this->assertSame('A', $this->storage->get('default', '/sub/a.png')?->getAlt());
+    }
+
+    public function testSavingADetachedMetadataUpdatesTheStoredRow(): void
+    {
+        $this->store('default', 'a.png', 'A', ['one']);
+        $detached = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($detached);
+        $this->entityManager->detach($detached);
+
+        $detached->setAlt('Changed');
+        $detached->setTags(['two']);
+        $this->storage->save($detached);
+
+        $this->entityManager->clear();
+        $found = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($found);
+        $this->assertSame('Changed', $found->getAlt());
+        $this->assertSame(['two'], $found->getTags());
+        $this->assertSame(1, $this->countTags());
+    }
+
+    public function testSavingADetachedMetadataWhoseRowIsGoneInsertsItAgain(): void
+    {
+        $this->store('default', 'a.png', 'A');
+        $metadata = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($metadata);
+
+        $this->storage->delete('default', 'a.png');
+        $this->storage->save($metadata);
+
+        $this->entityManager->clear();
+        $this->assertSame('A', $this->storage->get('default', 'a.png')?->getAlt());
+    }
+
+    public function testDeleteAndMoveDoNotFlushPendingChanges(): void
+    {
+        $this->store('default', 'a.png', 'A');
+        $this->store('default', 'b.png', 'B');
+        $other = $this->storage->get('default', 'b.png');
+        $this->assertNotNull($other);
+        $other->setAlt('Pending');
+
+        $this->storage->delete('default', 'a.png');
+        $this->storage->move('default', 'c.png', 'd.png');
+        $this->storage->deleteFolder('default', 'nothing');
+        $this->storage->moveFolder('default', 'nothing', 'else');
+
+        $alt = $this->entityManager->getConnection()->fetchOne('SELECT alt FROM joli_media_metadata WHERE path = ?', ['b.png']);
+        $this->assertSame('B', $alt);
+        $this->assertTrue($this->entityManager->isOpen());
     }
 
     public function testFolderOperationsDoNotTouchSiblingPrefixes(): void
@@ -269,11 +376,15 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $this->store('default', 'c.png', null, ['summer', 'Beach']);
         $this->store('auto_generate', 'd.png', null, ['other']);
 
-        $this->assertSame(['summer', 'Beach', 'beach', 'city'], $this->storage->listTags('default'));
-        $this->assertSame(['summer', 'Beach'], $this->storage->listTags('default', 2));
+        $tags = $this->storage->listTags('default');
+        $this->assertSame('summer', $tags[0]);
+        $this->assertContains('city', $tags);
+        $this->assertContains('beach', array_map('strtolower', $tags));
+        $this->assertSame('summer', $this->storage->listTags('default', 1)[0]);
+        $this->assertCount(2, $this->storage->listTags('default', 2));
         $this->assertSame(['other'], $this->storage->listTags('auto_generate'));
         $this->assertSame(['a.png', 'b.png', 'c.png'], $this->storage->findPathsByTag('default', 'summer'));
-        $this->assertSame(['a.png'], $this->storage->findPathsByTag('default', 'beach'));
+        $this->assertContains('a.png', $this->storage->findPathsByTag('default', 'beach'));
         $this->assertSame([], $this->storage->findPathsByTag('default', 'other'));
     }
 

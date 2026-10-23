@@ -5,6 +5,7 @@ namespace JoliCode\MediaBundle\Metadata\Model;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use JoliCode\MediaBundle\Resolver\Resolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity]
@@ -66,6 +67,8 @@ class MediaMetadata
 
     public function __construct(string $library, string $path)
     {
+        $path = Resolver::normalizePath($path);
+
         if (mb_strlen($library) > self::LIBRARY_MAX_LENGTH) {
             throw new \InvalidArgumentException(\sprintf('The library name must not exceed %d characters.', self::LIBRARY_MAX_LENGTH));
         }

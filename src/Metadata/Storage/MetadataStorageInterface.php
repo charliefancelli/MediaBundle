@@ -38,11 +38,15 @@ interface MetadataStorageInterface
     public function moveFolder(string $library, string $from, string $to): void;
 
     /**
+     * Names are compared as the database collation does (case and accent insensitive with MySQL's default collations).
+     *
      * @return list<string> distinct tag names, most used first, then alphabetically
      */
     public function listTags(string $library, int $limit = 100): array;
 
     /**
+     * The tag is compared as the database collation does (case and accent insensitive with MySQL's default collations).
+     *
      * @return list<string>
      */
     public function findPathsByTag(string $library, string $tag): array;
