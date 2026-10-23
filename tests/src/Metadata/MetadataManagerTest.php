@@ -68,6 +68,43 @@ class MetadataManagerTest extends BaseTestCase
         self::assertTrue($this->events[0]->deleted);
     }
 
+    public function testSavingAnEmptyMetadataWhichWasNeverStoredIsNotADeletion(): void
+    {
+        $this->manager->save(new MediaMetadata('default', 'never.png'));
+
+        self::assertCount(1, $this->events);
+        self::assertFalse($this->events[0]->deleted);
+    }
+
+    public function testSavingAnEmptyCopyOfStoredMetadataIsADeletion(): void
+    {
+        $this->storage->put('default', 'a.png', 'An alt');
+
+        $this->manager->save(new MediaMetadata('default', 'a.png'));
+
+        self::assertNull($this->provider->get('a.png'));
+        self::assertCount(1, $this->events);
+        self::assertTrue($this->events[0]->deleted);
+    }
+
+    public function testAFailedSaveForgetsTheMemoizedMetadata(): void
+    {
+        $stored = $this->storage->put('default', 'a.png', 'An alt');
+        self::assertSame($stored, $this->provider->get('a.png'));
+        $this->storage->failOnSave = true;
+
+        try {
+            $this->manager->save(new MediaMetadata('default', 'a.png'));
+            self::fail('An exception was expected.');
+        } catch (\RuntimeException) {
+        }
+
+        self::assertSame([], $this->events);
+        $this->storage->getCalls = 0;
+        $this->provider->get('a.png');
+        self::assertSame(1, $this->storage->getCalls);
+    }
+
     public function testSaveWorksWithoutListeners(): void
     {
         $manager = new MetadataManager($this->storage, $this->provider, new EventDispatcher());

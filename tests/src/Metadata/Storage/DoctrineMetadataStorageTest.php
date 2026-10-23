@@ -3,6 +3,7 @@
 namespace JoliCode\MediaBundle\Tests\Metadata\Storage;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadata;
 use JoliCode\MediaBundle\Metadata\Model\MediaMetadataTag;
 use JoliCode\MediaBundle\Metadata\Storage\DoctrineMetadataStorage;
@@ -371,6 +372,151 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $this->assertSame(1, $this->countTags());
     }
 
+    public function testACaseOnlyRenameKeepsTheMetadata(): void
+    {
+        $this->store('default', 'A.png', 'Alt of A', ['one']);
+        $this->store('default', 'Photos/x.png', 'Alt of x');
+
+        QueryCounterMiddleware::reset();
+        $this->storage->move('default', 'A.png', 'a.png');
+        $this->storage->moveFolder('default', 'Photos', 'photos');
+        $deletes = array_values(array_filter(
+            QueryCounterMiddleware::getQueries(),
+            static fn (string $sql): bool => str_starts_with(ltrim($sql), 'DELETE FROM joli_media_metadata '),
+        ));
+
+        $this->assertSame('Alt of A', $this->storage->get('default', 'a.png')?->getAlt());
+        $this->assertSame(['one'], $this->storage->get('default', 'a.png')->getTags());
+        $this->assertSame('Alt of x', $this->storage->get('default', 'photos/x.png')?->getAlt());
+
+        // with a case insensitive collation, the target also matches the source: the cleanup of the target excludes it
+        $this->assertStringContainsString('<>', $deletes[0]);
+        $this->assertStringContainsString('NOT (', $deletes[1]);
+    }
+
+    public function testMovingToATooLongPathDropsTheMetadata(): void
+    {
+        $this->store('default', 'a.png', 'A', ['one']);
+        $this->store('default', 'b.png', 'B');
+        $longPath = str_repeat('x', MediaMetadata::PATH_MAX_LENGTH) . '.png';
+
+        $this->storage->move('default', 'a.png', $longPath);
+
+        $this->assertNull($this->storage->get('default', 'a.png'));
+        $this->assertSame(1, $this->countRows());
+        $this->assertSame(0, $this->countTags());
+        $this->assertNotNull($this->storage->get('default', 'b.png'));
+    }
+
+    public function testMovingAFolderDropsTheMetadataWhosePathWouldBeTooLong(): void
+    {
+        // 'src/' + 246 + '.png' = 254 characters, 'longer-dst/' + 246 + '.png' = 261 characters
+        $long = 'src/' . str_repeat('x', 246) . '.png';
+        $this->store('default', $long, 'Long', ['one']);
+        $this->store('default', 'src/short.png', 'Short');
+        $this->store('default', 'other/' . str_repeat('x', 245) . '.png', 'Elsewhere');
+
+        $this->storage->moveFolder('default', 'src', 'longer-dst');
+
+        $this->assertNull($this->storage->get('default', $long));
+        $this->assertSame('Short', $this->storage->get('default', 'longer-dst/short.png')?->getAlt());
+        $this->assertNotNull($this->storage->get('default', 'other/' . str_repeat('x', 245) . '.png'));
+        $this->assertSame(3 - 1, $this->countRows());
+        $this->assertSame(0, $this->countTags());
+        $this->assertSame([], $this->entityManager->getConnection()->fetchFirstColumn('SELECT path FROM joli_media_metadata WHERE LENGTH(path) > ?', [MediaMetadata::PATH_MAX_LENGTH]));
+    }
+
+    public function testSavingADetachedMetadataAfterAMoveUpdatesTheMovedRow(): void
+    {
+        $this->store('default', 'a.png', 'A', ['one']);
+        $detached = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($detached);
+        $this->entityManager->detach($detached);
+
+        $this->storage->move('default', 'a.png', 'moved/a.png');
+
+        $detached->setAlt('Changed');
+        $this->storage->save($detached);
+
+        $this->entityManager->clear();
+        $this->assertNull($this->storage->get('default', 'a.png'));
+        $this->assertSame('Changed', $this->storage->get('default', 'moved/a.png')?->getAlt());
+        $this->assertSame(1, $this->countRows());
+    }
+
+    public function testSavingANewInstanceForAStoredPathMergesOntoTheRow(): void
+    {
+        $this->store('default', 'a.png', 'A', ['one', 'two']);
+        $this->entityManager->clear();
+
+        $new = new MediaMetadata('default', 'a.png');
+        $new->setCaption('Caption');
+        $new->setTags(['two', 'three']);
+        $this->storage->save($new);
+
+        $this->entityManager->clear();
+        $found = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($found);
+        $this->assertNull($found->getAlt());
+        $this->assertSame('Caption', $found->getCaption());
+        $this->assertSame(['two', 'three'], $found->getTags());
+        $this->assertSame(1, $this->countRows());
+        $this->assertSame(2, $this->countTags());
+
+        // an empty new instance deletes the stored row
+        $this->storage->save(new MediaMetadata('default', 'a.png'));
+        $this->assertSame(0, $this->countRows());
+        $this->assertSame(0, $this->countTags());
+    }
+
+    public function testAFailedFlushDetachesTheStoredInstance(): void
+    {
+        $this->store('default', 'a.png', 'A');
+        $managed = $this->storage->get('default', 'a.png');
+        $this->assertNotNull($managed);
+
+        $listener = new class {
+            public function onFlush(): void
+            {
+                throw new \RuntimeException('The database is down.');
+            }
+        };
+        $this->entityManager->getEventManager()->addEventListener(Events::onFlush, $listener);
+
+        $new = new MediaMetadata('default', 'a.png');
+        $new->setAlt('Not saved');
+
+        try {
+            $this->storage->save($new);
+            $this->fail('An exception was expected.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('The database is down.', $e->getMessage());
+        } finally {
+            $this->entityManager->getEventManager()->removeEventListener(Events::onFlush, $listener);
+        }
+
+        $this->assertFalse($this->entityManager->contains($managed));
+        $this->assertSame('A', $this->storage->get('default', 'a.png')?->getAlt());
+    }
+
+    public function testGetManyReadsLongListsInChunks(): void
+    {
+        $this->store('default', 'a.png', 'A');
+        $this->store('default', 'z.png', 'Z');
+        $paths = ['a.png'];
+        for ($i = 0; $i < DoctrineMetadataStorage::GET_MANY_CHUNK_SIZE; ++$i) {
+            $paths[] = 'missing-' . $i . '.png';
+        }
+        $paths[] = 'z.png';
+        $this->entityManager->clear();
+
+        QueryCounterMiddleware::reset();
+        $result = $this->storage->getMany('default', $paths);
+
+        $this->assertCount(2, QueryCounterMiddleware::getQueries());
+        $this->assertSame(['a.png', 'z.png'], array_keys($result));
+    }
+
     public function testListTagsAndFindPathsByTag(): void
     {
         $this->store('default', 'a.png', null, ['summer', 'beach']);
@@ -407,6 +553,11 @@ class DoctrineMetadataStorageTest extends WebTestCase
         $this->storage->save($metadata);
 
         return $metadata;
+    }
+
+    private function countRows(): int
+    {
+        return (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM joli_media_metadata');
     }
 
     private function countTags(): int

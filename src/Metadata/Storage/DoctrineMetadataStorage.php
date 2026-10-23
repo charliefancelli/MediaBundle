@@ -22,6 +22,11 @@ use JoliCode\MediaBundle\Resolver\Resolver;
  */
 readonly class DoctrineMetadataStorage implements MetadataStorageInterface
 {
+    /**
+     * The maximum number of paths read by one query of getMany().
+     */
+    public const GET_MANY_CHUNK_SIZE = 500;
+
     public function __construct(
         private Registry $managerRegistry,
         private ?string $entityManagerName = null,
@@ -45,18 +50,21 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
         }
 
         $paths = array_values(array_unique(array_map(Resolver::normalizePath(...), $paths)));
-
-        /** @var list<MediaMetadata> $rows */
-        $rows = $this->getEntityManager()
-            ->createQuery('SELECT m, t FROM ' . MediaMetadata::class . ' m LEFT JOIN m.tags t WHERE m.library = :library AND m.path IN (:paths) ORDER BY m.id ASC, t.position ASC')
-            ->setParameter('library', $library)
-            ->setParameter('paths', $paths, ArrayParameterType::STRING)
-            ->getResult()
-        ;
-
         $result = [];
-        foreach ($rows as $metadata) {
-            $result[$metadata->getPath()] = $metadata;
+
+        // the list is cut in chunks, as databases bound the number of parameters of a query
+        foreach (array_chunk($paths, self::GET_MANY_CHUNK_SIZE) as $chunk) {
+            /** @var list<MediaMetadata> $rows */
+            $rows = $this->getEntityManager()
+                ->createQuery('SELECT m, t FROM ' . MediaMetadata::class . ' m LEFT JOIN m.tags t WHERE m.library = :library AND m.path IN (:paths) ORDER BY m.id ASC, t.position ASC')
+                ->setParameter('library', $library)
+                ->setParameter('paths', $chunk, ArrayParameterType::STRING)
+                ->getResult()
+            ;
+
+            foreach ($rows as $metadata) {
+                $result[$metadata->getPath()] = $metadata;
+            }
         }
 
         return $result;
@@ -64,44 +72,37 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
 
     /**
      * The whole entity manager is flushed (ORM 3 cannot flush a single entity).
+     *
+     * An instance which is not managed (detached by a move or a delete, or created for a library and a path which
+     * already have a row) is merged onto the stored row: the row of its id first (it may have been moved since), then
+     * the row of its library and path. When the flush fails, the stored instance is detached, so that the next read
+     * does not return the values which were not saved.
      */
     #[\Override]
     public function save(MediaMetadata $metadata): void
     {
         $entityManager = $this->getEntityManager();
+        $stored = $this->findStored($entityManager, $metadata);
 
         if (!$metadata->isEmpty()) {
-            if (null !== $metadata->getId() && !$entityManager->contains($metadata)) {
-                // detached (e.g. by a move or a delete): ORM would insert it again, so update the managed row instead
-                $managed = $this->get($metadata->getLibrary(), $metadata->getPath());
-
-                if ($managed instanceof MediaMetadata) {
-                    $managed->setAlt($metadata->getAlt());
-                    $managed->setCaption($metadata->getCaption());
-                    $managed->setCopyright($metadata->getCopyright());
-                    $managed->setTags($metadata->getTags());
-                    $metadata = $managed;
-                }
+            if ($stored instanceof MediaMetadata && $stored !== $metadata) {
+                $stored->setAlt($metadata->getAlt());
+                $stored->setCaption($metadata->getCaption());
+                $stored->setCopyright($metadata->getCopyright());
+                $stored->setTags($metadata->getTags());
+                $metadata = $stored;
             }
 
-            $entityManager->persist($metadata);
-            $entityManager->flush();
+            $this->flush($entityManager, $metadata, static fn () => $entityManager->persist($metadata));
 
             return;
         }
 
-        $id = $metadata->getId();
-
-        if (null === $id) {
-            return; // never stored
+        if (!$stored instanceof MediaMetadata) {
+            return; // never stored, or already deleted
         }
 
-        $managed = $entityManager->contains($metadata) ? $metadata : $entityManager->getReference(MediaMetadata::class, $id);
-
-        if (null !== $managed) {
-            $entityManager->remove($managed);
-            $entityManager->flush();
-        }
+        $this->flush($entityManager, $stored, static fn () => $entityManager->remove($stored));
     }
 
     #[\Override]
@@ -138,8 +139,16 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
 
         $this->detach($entityManager, static fn (MediaMetadata $metadata): bool => $library === $metadata->getLibrary() && ($from === $metadata->getPath() || $to === $metadata->getPath()));
 
+        if (mb_strlen($to) > MediaMetadata::PATH_MAX_LENGTH) {
+            // such a path can never have metadata (the column would refuse or truncate it): they are dropped
+            $this->deleteRows($entityManager, 'm.path = :path', ['library' => $library, 'path' => $from]);
+
+            return;
+        }
+
         $entityManager->getConnection()->transactional(function () use ($entityManager, $library, $from, $to): void {
-            $this->deleteRows($entityManager, 'm.path = :path', ['library' => $library, 'path' => $to]);
+            // the source is excluded: with a case or accent insensitive collation, "A.png" equals "a.png"
+            $this->deleteRows($entityManager, 'm.path = :path AND m.path <> :from', ['library' => $library, 'path' => $to, 'from' => $from]);
 
             $entityManager
                 ->createQuery('UPDATE ' . MediaMetadata::class . ' m SET m.path = :to WHERE m.library = :library AND m.path = :from')
@@ -166,7 +175,19 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
         $this->detach($entityManager, static fn (MediaMetadata $metadata): bool => $library === $metadata->getLibrary() && (str_starts_with($metadata->getPath(), $fromPrefix) || str_starts_with($metadata->getPath(), $toPrefix)));
 
         $entityManager->getConnection()->transactional(function () use ($entityManager, $library, $fromPrefix, $toPrefix): void {
-            $this->deleteRows($entityManager, $this->prefixCondition($toPrefix), ['library' => $library, 'prefix' => $toPrefix]);
+            // the source is excluded: with a case or accent insensitive collation, "Photos/" equals "photos/"
+            $this->deleteRows(
+                $entityManager,
+                $this->prefixCondition($toPrefix) . ' AND NOT (' . $this->prefixCondition($fromPrefix, 'fromPrefix') . ')',
+                ['library' => $library, 'prefix' => $toPrefix, 'fromPrefix' => $fromPrefix],
+            );
+
+            // the paths which would get too long can never have metadata (the column would refuse or truncate them)
+            $this->deleteRows(
+                $entityManager,
+                $this->prefixCondition($fromPrefix) . ' AND LENGTH(m.path) > ' . (MediaMetadata::PATH_MAX_LENGTH - mb_strlen($toPrefix) + mb_strlen($fromPrefix)),
+                ['library' => $library, 'prefix' => $fromPrefix],
+            );
 
             $entityManager
                 ->createQuery('UPDATE ' . MediaMetadata::class . ' m SET m.path = CONCAT(:toPrefix, SUBSTRING(m.path, ' . (mb_strlen($fromPrefix) + 1) . ')) WHERE m.library = :library AND ' . $this->prefixCondition($fromPrefix))
@@ -234,9 +255,43 @@ readonly class DoctrineMetadataStorage implements MetadataStorageInterface
         return $folder . '/';
     }
 
-    private function prefixCondition(string $prefix): string
+    private function prefixCondition(string $prefix, string $parameter = 'prefix'): string
     {
-        return 'SUBSTRING(m.path, 1, ' . mb_strlen($prefix) . ') = :prefix';
+        return 'SUBSTRING(m.path, 1, ' . mb_strlen($prefix) . ') = :' . $parameter;
+    }
+
+    private function findStored(EntityManagerInterface $entityManager, MediaMetadata $metadata): ?MediaMetadata
+    {
+        if ($entityManager->contains($metadata)) {
+            return $metadata;
+        }
+
+        $id = $metadata->getId();
+
+        if (null !== $id) {
+            $stored = $entityManager->find(MediaMetadata::class, $id);
+
+            if ($stored instanceof MediaMetadata) {
+                return $stored;
+            }
+        }
+
+        return $this->get($metadata->getLibrary(), $metadata->getPath());
+    }
+
+    /**
+     * @param callable(): void $schedule
+     */
+    private function flush(EntityManagerInterface $entityManager, MediaMetadata $metadata, callable $schedule): void
+    {
+        try {
+            $schedule();
+            $entityManager->flush();
+        } catch (\Throwable $e) {
+            $this->detach($entityManager, static fn (MediaMetadata $managed): bool => $managed === $metadata);
+
+            throw $e;
+        }
     }
 
     /**

@@ -52,6 +52,9 @@ class MetadataProvider implements ResetInterface
     /**
      * @param iterable<Media|MediaVariation|string> $medias
      *
+     * The result is indexed by path only: when the media belong to several libraries, two media with the same path
+     * collide (the last one wins). Call it once per library in that case.
+     *
      * @return array<string, MediaMetadata> indexed by path, media without metadata are absent
      */
     public function getMany(iterable $medias, ?string $libraryName = null): array

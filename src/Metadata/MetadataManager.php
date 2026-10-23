@@ -10,22 +10,31 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Writes the metadata of the media: an empty metadata deletes its row.
+ *
+ * The given instance does not need to be the stored one: a copy, or a new instance for a media which already has
+ * metadata, replaces the stored values (see MetadataStorageInterface::save()).
  */
-class MetadataManager
+readonly class MetadataManager
 {
     public function __construct(
-        private readonly MetadataStorageInterface $storage,
-        private readonly MetadataProvider $provider,
-        private readonly EventDispatcherInterface $dispatcher,
+        private MetadataStorageInterface $storage,
+        private MetadataProvider $provider,
+        private EventDispatcherInterface $dispatcher,
     ) {
     }
 
     public function save(MediaMetadata $metadata): void
     {
-        $deleted = $metadata->isEmpty();
+        // a row is deleted only when the metadata were stored: they have an id, or a row exists at their path
+        $deleted = $metadata->isEmpty()
+            && (null !== $metadata->getId() || null !== $this->storage->get($metadata->getLibrary(), $metadata->getPath()));
 
-        $this->storage->save($metadata);
-        $this->provider->forget($metadata->getLibrary(), $metadata->getPath());
+        try {
+            $this->storage->save($metadata);
+        } finally {
+            // even after a failure: the memoized instance may hold the values which were not saved
+            $this->provider->forget($metadata->getLibrary(), $metadata->getPath());
+        }
 
         if ($this->dispatcher->hasListeners(MediaEvents::POST_SAVE_METADATA)) {
             $this->dispatcher->dispatch(new PostSaveMetadataEvent($metadata, $deleted), MediaEvents::POST_SAVE_METADATA);

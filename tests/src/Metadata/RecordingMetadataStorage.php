@@ -12,6 +12,8 @@ class RecordingMetadataStorage implements MetadataStorageInterface
 {
     public int $getCalls = 0;
 
+    public bool $failOnSave = false;
+
     public int $getManyCalls = 0;
 
     /**
@@ -64,6 +66,10 @@ class RecordingMetadataStorage implements MetadataStorageInterface
     #[\Override]
     public function save(MediaMetadata $metadata): void
     {
+        if ($this->failOnSave) {
+            throw new \RuntimeException('The metadata storage is down.');
+        }
+
         $key = $metadata->getLibrary() . "\0" . $metadata->getPath();
 
         if ($metadata->isEmpty()) {
