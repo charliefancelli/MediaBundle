@@ -216,6 +216,13 @@ class ConfigurationTest extends TestCase
         $this->processConfiguration([['metadata' => ['enabled' => true, 'fields' => ['title']]]]);
     }
 
+    public function testDuplicateMetadataFieldsAreRejected(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->processConfiguration([['metadata' => ['enabled' => true, 'fields' => ['alt', 'alt']]]]);
+    }
+
     public function testEmptyMetadataFieldsAreRejected(): void
     {
         $this->expectException(InvalidConfigurationException::class);

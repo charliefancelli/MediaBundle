@@ -2,6 +2,7 @@
 
 namespace JoliCode\MediaBundle\Tests\DependencyInjection;
 
+use JoliCode\MediaBundle\DependencyInjection\Compiler\DoctrinePass;
 use JoliCode\MediaBundle\JoliMediaBundle;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -12,6 +13,10 @@ class MetadataDisabledTest extends TestCase
     public function testDisabledMetadataRegistersNothing(): void
     {
         $container = $this->createContainer(['enabled' => false]);
+
+        // DoctrinePass must be a no-op when the metadata are off, even without DoctrineBundle
+        // (a full compilation is not possible here: the services depend on the application)
+        (new DoctrinePass())->process($container);
 
         $this->assertFalse($container->getParameter('joli_media.metadata.enabled'));
         $this->assertFalse($container->getParameter('joli_media.metadata.doctrine_mapping'));
